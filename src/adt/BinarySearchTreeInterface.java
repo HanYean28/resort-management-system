@@ -5,8 +5,6 @@ import java.util.Iterator;
 /**
  * An interface for the ADT Binary Search Tree.
  *
- * Adapted from: Frank M. Carrano, Data Structures and Algorithms in Java.
- *
  * @author Frank M. Carrano
  * @version 2.0
  * @param <T> The type of elements held in this tree; must be Comparable.

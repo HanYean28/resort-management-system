@@ -3,7 +3,7 @@ package adt;
 import java.io.Serializable;
 
 /**
- * ArrayList.java A class that implements the ADT List using an array.
+ * Adapted from: Frank M. Carrano, Data Structures and Algorithms in Java.
  *
  * @author Frank M. Carrano
  * @version 2.0
