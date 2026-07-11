@@ -1,0 +1,8 @@
+101|Deluxe|Ready
+102|Standard|Cleaning In Progress
+103|Suite|Cleaning In Progress
+104|Deluxe|Inspected
+105|Suite|Dirty
+106|Standard|Ready
+107|Deluxe|Dirty
+108|Suite|Inspected

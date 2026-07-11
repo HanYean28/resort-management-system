@@ -5,10 +5,9 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 /**
- * A linked implementation of the ADT binary search tree.
  *
  * Adapted from: Frank M. Carrano, Data Structures and Algorithms in Java.
- *
+ * 
  * @author Frank M. Carrano
  * @version 2.0
  * @param <T> The type of elements held in this tree; must be Comparable.

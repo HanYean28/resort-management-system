@@ -4,8 +4,7 @@ import java.io.Serializable;
 import java.util.Iterator;
 
 /**
- * ArrayQueue.java A class that implements the ADT queue using a
- * linear array with a fixed front.
+ * Adapted from: Frank M. Carrano, Data Structures and Algorithms in Java.
  * 
  * @author Frank M. Carrano
  * @version 2.0
