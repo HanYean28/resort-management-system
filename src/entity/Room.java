@@ -3,7 +3,7 @@ package entity;
 import java.io.Serializable;
 
 /**
- * Entity class representing a resort room.
+ * @author Chang Han Yean
  */
 public class Room implements Serializable {
     private String roomNumber;

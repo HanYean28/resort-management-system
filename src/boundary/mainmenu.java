@@ -2,9 +2,11 @@ package boundary;
 
 import java.util.Scanner;
 
-
 /**
  * @author Chang Han Yean
+ * @author Elwin Goh Yao Zu
+ * @author Lim How Voon
+ * @author Kaizen Soh
  */
 
 public class mainmenu {
