@@ -3,7 +3,7 @@ package entity;
 /**
  * @author Lim How Voon
  */
-public class Guest {
+public class Guest implements Comparable<Guest> {
 
     private String confirmationNo;
     private String name;
@@ -89,5 +89,15 @@ public class Guest {
             return false;
         Guest guest = (Guest) obj;
         return confirmationNo != null ? confirmationNo.equals(guest.confirmationNo) : guest.confirmationNo == null;
+    }
+
+    @Override
+    public int hashCode() {
+        return confirmationNo != null ? confirmationNo.hashCode() : 0;
+    }
+
+    @Override
+    public int compareTo(Guest other) {
+        return this.confirmationNo.compareTo(other.confirmationNo);
     }
 }
