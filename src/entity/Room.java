@@ -9,11 +9,13 @@ public class Room implements Serializable {
     private String roomNumber;
     private String roomType;
     private String cleanlinessStatus; // "Dirty", "Cleaning In Progress", "Inspected", "Ready"
+    private String lastUpdate;
 
-    public Room(String roomNumber, String roomType, String cleanlinessStatus) {
+    public Room(String roomNumber, String roomType, String cleanlinessStatus, String lastUpdate) {
         this.roomNumber = roomNumber;
         this.roomType = roomType;
         this.cleanlinessStatus = cleanlinessStatus;
+        this.lastUpdate = lastUpdate;
     }
 
     public String getRoomNumber() {
@@ -40,8 +42,17 @@ public class Room implements Serializable {
         this.cleanlinessStatus = cleanlinessStatus;
     }
 
+    public String getLastUpdate() {
+        return lastUpdate;
+    }
+
+    public void setLastUpdate(String lastUpdate) {
+        this.lastUpdate = lastUpdate;
+    }
+
     @Override
     public String toString() {
-        return String.format("Room %-6s | Type: %-12s | Status: %-20s", roomNumber, roomType, cleanlinessStatus);
+        return String.format("Room %-6s | Type: %-12s | Status: %-20s | Last Update: %s",
+                roomNumber, roomType, cleanlinessStatus, lastUpdate);
     }
 }
