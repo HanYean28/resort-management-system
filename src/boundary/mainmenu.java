@@ -43,8 +43,7 @@ public class mainmenu {
                 case 2:
                 case 3:
                 case 4:
-                    System.out.println("This module is not implemented yet.");
-                    UIUtils.pressEnterToContinue(scanner);
+                    new FrontDeskUI().start();
                     break;
                 case 0:
                     System.out.println("Exiting the system. Goodbye!");
