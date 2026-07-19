@@ -42,8 +42,12 @@ public class mainmenu {
                     break;
                 case 2:
                 case 3:
+                    System.out.println("\nCXO: This feature is currently unavailable. Please check back later.");
+                    UIUtils.pressEnterToContinue(scanner);
+                    break;
                 case 4:
                     new FrontDeskUI().start();
+                    UIUtils.pressEnterToContinue(scanner);
                     break;
                 case 0:
                     System.out.println("Exiting the system. Goodbye!");
