@@ -15,16 +15,22 @@ public class ArrayList<T> implements ListInterface<T>, Serializable {
     private int numberOfEntries;
     private static final int DEFAULT_CAPACITY = 100;
 
+    // default constructor with default initial capacity
     public ArrayList() {
         this(DEFAULT_CAPACITY);
     }
 
+    // constructor with custom initial capacity
     @SuppressWarnings("unchecked")
     public ArrayList(int initialCapacity) {
+        if (initialCapacity < 1) {
+            throw new IllegalArgumentException("Initial capacity must be greater than 0");
+        }
         numberOfEntries = 0;
         array = (T[]) new Object[initialCapacity];
     }
 
+    // add a new entry to the end of the list
     @Override
     public boolean add(T newEntry) {
         if (isFull()) {
@@ -36,6 +42,8 @@ public class ArrayList<T> implements ListInterface<T>, Serializable {
         return true;
     }
 
+    // add a new entry at a specified position within the list
+    // position is 1-based, so 1 is the first position and in array is at index 0
     @Override
     public boolean add(int newPosition, T newEntry) {
         boolean isSuccessful = true;

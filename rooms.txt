@@ -1,8 +1,8 @@
-101|Deluxe|Ready
-102|Standard|Cleaning In Progress
-103|Suite|Cleaning In Progress
-104|Deluxe|Inspected
-105|Suite|Dirty
-106|Standard|Ready
-107|Deluxe|Dirty
-108|Suite|Inspected
+101|Deluxe|Dirty|2026-07-19 19:24:49
+102|Standard|Inspected|N/A
+103|Suite|Cleaning In Progress|N/A
+104|Deluxe|Inspected|N/A
+105|Suite|Dirty|N/A
+106|Standard|Ready|N/A
+107|Deluxe|Dirty|N/A
+108|Suite|Inspected|N/A

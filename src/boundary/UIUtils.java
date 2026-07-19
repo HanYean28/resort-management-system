@@ -1,5 +1,7 @@
 package boundary;
 
+import java.util.Scanner;
+
 /**
  * @author Chang Han Yean
  */
@@ -23,12 +25,35 @@ public class UIUtils {
         }
     }
 
-    public static void pressEnterToContinue() {
-        System.out.print("\nPress Enter to continue");
-        try {
-            System.in.read(new byte[System.in.available()]);
-            System.in.read();
-        } catch (Exception e) {
+    public static void pressEnterToContinue(Scanner scanner) {
+        System.out.print("\nPress Enter to continue...");
+        scanner.nextLine();
+    }
+
+    public static void printHeader(String title) {
+        System.out.println("==================================================");
+        System.out.println(centerText(title, 50));
+        System.out.println("==================================================");
+    }
+
+    public static void printSectionLine() {
+        System.out.println("--------------------------------------------------");
+    }
+
+    public static void printError(String message) {
+        System.out.println(" [ERROR] " + message);
+    }
+
+    private static String centerText(String text, int width) {
+        if (text.length() >= width) {
+            return text;
         }
+        int padding = (width - text.length()) / 2;
+        StringBuilder line = new StringBuilder();
+        for (int i = 0; i < padding; i++) {
+            line.append(' ');
+        }
+        line.append(text);
+        return line.toString();
     }
 }
