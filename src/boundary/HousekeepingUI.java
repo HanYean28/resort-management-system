@@ -1,8 +1,9 @@
 package boundary;
 
 import adt.ListInterface;
-import control.HousekeepingManager;
+import control.HousekeepingController;
 import entity.HousekeepingLog;
+import entity.HousekeepingShiftReport;
 import entity.Room;
 
 import java.util.Scanner;
@@ -11,11 +12,11 @@ import java.util.Scanner;
  * @author Chang Han Yean
  */
 public class HousekeepingUI {
-    private HousekeepingManager manager;
+    private HousekeepingController manager;
     private Scanner scanner;
 
     public HousekeepingUI() {
-        manager = new HousekeepingManager();
+        manager = new HousekeepingController();
         scanner = new Scanner(System.in);
     }
 
@@ -27,7 +28,7 @@ public class HousekeepingUI {
             System.out.println(" [1] View All Rooms Status");
             System.out.println(" [2] Update Room Cleanliness Status");
             System.out.println(" [3] Rollback Last Status Update (Undo)");
-            System.out.println(" [4] Generate Report 1: Room Status Summary");
+            System.out.println(" [4] Generate Report 1: Shift Turnover Performance");
             System.out.println(" [5] Generate Report 2: Housekeeping Overview & Search");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
@@ -54,6 +55,8 @@ public class HousekeepingUI {
                     handleRollback();
                     break;
                 case 4:
+                    handleShiftTurnoverReport();
+                    break;
                 case 5:
                     System.out.println("\nThis report is not implemented yet.");
                     break;
@@ -173,6 +176,155 @@ public class HousekeepingUI {
         }
     }
 
+    private void handleShiftTurnoverReport() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 1: SHIFT TURNOVER PERFORMANCE");
+
+        String shiftCode = promptShiftSelection();
+        if (shiftCode == null) {
+            System.out.println("\nReport generation cancelled.");
+            return;
+        }
+
+        String roomTypeFilter = promptRoomTypeFilter();
+        if (roomTypeFilter == null) {
+            System.out.println("\nReport generation cancelled.");
+            return;
+        }
+
+        HousekeepingShiftReport report = manager.generateShiftTurnoverReport(shiftCode, roomTypeFilter);
+
+        while (true) {
+            UIUtils.clearScreen();
+            displayShiftTurnoverReport(report);
+
+            System.out.println();
+            UIUtils.printSectionLine();
+            System.out.println(" [REPORT ACTIONS]");
+            System.out.println(" [1] Save report to file");
+            System.out.println(" [0] Return to menu (do not save)");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-1): ");
+
+            Integer action = readIntOption(0, 1);
+            if (action == null) {
+                System.out.println("\nInvalid input! Please enter a number.");
+                UIUtils.pressEnterToContinue(scanner);
+                continue;
+            }
+            if (action == 0) {
+                System.out.println("\nReturning to menu without saving.");
+                return;
+            }
+
+            if (!confirmSaveReport(report)) {
+                continue;
+            }
+
+            String savedPath = manager.saveShiftTurnoverReport(report);
+            if (savedPath != null) {
+                System.out.println("\n[SUCCESS] Saved to: " + savedPath);
+            } else {
+                UIUtils.printError("Unable to save report file.");
+            }
+            return;
+        }
+    }
+
+    private void displayShiftTurnoverReport(HousekeepingShiftReport report) {
+        ListInterface<String> lines = manager.buildReportLines(report);
+        for (int i = 1; i <= lines.getNumberOfEntries(); i++) {
+            System.out.println(lines.getEntry(i));
+        }
+    }
+
+    private boolean confirmSaveReport(HousekeepingShiftReport report) {
+        if (!manager.reportFileExists(report)) {
+            return true;
+        }
+
+        while (true) {
+            UIUtils.clearScreen();
+            System.out.println("==================================================================");
+            System.out.println("                    REPORT EXPORT & OPTIONS");
+            System.out.println("==================================================================");
+            System.out.println("[NOTICE] Saved file detected: " + manager.getReportDisplayPath(report));
+            System.out.println("\nChoose Action:");
+            System.out.println("  [1] Overwrite & Update Saved Report");
+            System.out.println("  [0] Do Not Save (View Only)");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-1): ");
+
+            Integer choice = readIntOption(0, 1);
+            if (choice == null) {
+                System.out.println("\nInvalid input! Please enter a number.");
+                UIUtils.pressEnterToContinue(scanner);
+                continue;
+            }
+            return choice == 1;
+        }
+    }
+
+    private String promptShiftSelection() {
+        System.out.println("\nSelect shift window for turnover analysis:");
+        System.out.println(" [1] Current Shift (auto-detect)");
+        System.out.println(" [2] Morning Shift (07:00-14:59)");
+        System.out.println(" [3] Afternoon Shift (15:00-22:59)");
+        System.out.println(" [4] Night Shift (23:00-06:59)");
+        System.out.println(" [0] Cancel");
+        UIUtils.printSectionLine();
+        System.out.print("Please enter choice (0-4): ");
+
+        Integer choice = readIntOption(0, 4);
+        if (choice == null) {
+            System.out.println("\nInvalid input! Please enter a number.");
+            return null;
+        }
+        if (choice == 0) {
+            return null;
+        }
+        if (choice == 1) {
+            return HousekeepingController.SHIFT_CURRENT;
+        }
+        if (choice == 2) {
+            return HousekeepingController.SHIFT_MORNING;
+        }
+        if (choice == 3) {
+            return HousekeepingController.SHIFT_AFTERNOON;
+        }
+        return HousekeepingController.SHIFT_NIGHT;
+    }
+
+    private String promptRoomTypeFilter() {
+        System.out.println("\nApply room type filter:");
+        System.out.println(" [1] All Room Types");
+        System.out.println(" [2] Deluxe");
+        System.out.println(" [3] Standard");
+        System.out.println(" [4] Suite");
+        System.out.println(" [0] Cancel");
+        UIUtils.printSectionLine();
+        System.out.print("Please enter choice (0-4): ");
+
+        Integer choice = readIntOption(0, 4);
+        if (choice == null) {
+            System.out.println("\nInvalid input! Please enter a number.");
+            return null;
+        }
+        if (choice == 0) {
+            return null;
+        }
+        if (choice == 1) {
+            return HousekeepingController.FILTER_ALL;
+        }
+        if (choice == 2) {
+            return "Deluxe";
+        }
+        if (choice == 3) {
+            return "Standard";
+        }
+        return "Suite";
+    }
+
     private void handleRollback() {
         UIUtils.clearScreen();
         UIUtils.printHeader("ROLLBACK LAST STATUS UPDATE");
@@ -183,7 +335,7 @@ public class HousekeepingUI {
             return;
         }
 
-        Room room = manager.getRoom(lastAction.getRoomNumber());
+        Room room = lastAction.getRoom();
         String roomType = room != null ? room.getRoomType() : "Unknown";
 
         while (true) {
@@ -192,7 +344,7 @@ public class HousekeepingUI {
 
             System.out.println("\n [PENDING UNDO PREVIEW]");
             System.out.println(" Timestamp   : " + lastAction.getTimestamp());
-            System.out.println(" Room Target : Room " + lastAction.getRoomNumber() + " (" + roomType + ")");
+            System.out.println(" Room Target : Room " + lastAction.getRoom().getRoomNumber() + " (" + roomType + ")");
             System.out.println(" Action      : '" + lastAction.getOldStatus() + "' --> '"
                     + lastAction.getNewStatus() + "'");
             System.out.println(" Restoration : Room will return to '" + lastAction.getOldStatus() + "'");
@@ -258,7 +410,7 @@ public class HousekeepingUI {
 
     private void printRollbackDisruptionNotice(HousekeepingLog log, String roomType) {
         System.out.println("\n[OPERATIONAL DISRUPTION DETECTED]");
-        String roomLabel = "Room " + log.getRoomNumber() + " (" + roomType + ")";
+        String roomLabel = "Room " + log.getRoom().getRoomNumber() + " (" + roomType + ")";
         String oldStatus = log.getOldStatus();
         String newStatus = log.getNewStatus();
 
