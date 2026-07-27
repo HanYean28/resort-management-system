@@ -67,9 +67,7 @@ public class ArrayStack<T> implements StackInterface<T> {
 
   @Override
   public void clear() {
-    while (!isEmpty()) {
-      pop();
-    }
+    topIndex = -1; // O(1) time complexity
   } 
   
 } 
