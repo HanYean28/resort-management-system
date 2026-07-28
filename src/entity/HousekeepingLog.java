@@ -5,22 +5,21 @@ import java.io.Serializable;
 /**
  * @author Chang Han Yean
  */
-
 public class HousekeepingLog implements Serializable {
-    private String roomNumber;
+    private Room room;
     private String oldStatus;
     private String newStatus;
-    private String timestamp; // Formatted date/time of the status change
+    private String timestamp;
 
-    public HousekeepingLog(String roomNumber, String oldStatus, String newStatus, String timestamp) {
-        this.roomNumber = roomNumber;
+    public HousekeepingLog(Room room, String oldStatus, String newStatus, String timestamp) {
+        this.room = room;
         this.oldStatus = oldStatus;
         this.newStatus = newStatus;
         this.timestamp = timestamp;
     }
 
-    public String getRoomNumber() {
-        return roomNumber;
+    public Room getRoom() {
+        return room;
     }
 
     public String getOldStatus() {
@@ -37,7 +36,7 @@ public class HousekeepingLog implements Serializable {
 
     @Override
     public String toString() {
-        return String.format("[%s] Room %s status changed from '%s' to '%s'", 
-                timestamp, roomNumber, oldStatus, newStatus);
+        return String.format("[%s] Room %s status changed from '%s' to '%s'",
+                timestamp, room.getRoomNumber(), oldStatus, newStatus);
     }
 }

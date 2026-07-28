@@ -10,12 +10,21 @@ public class Room implements Serializable {
     private String roomType;
     private String cleanlinessStatus; // "Dirty", "Cleaning In Progress", "Inspected", "Ready"
     private String lastUpdate;
+    private String dirtySince;
+    private String lastTurnaroundMinutes;
 
     public Room(String roomNumber, String roomType, String cleanlinessStatus, String lastUpdate) {
+        this(roomNumber, roomType, cleanlinessStatus, lastUpdate, "N/A", "N/A");
+    }
+
+    public Room(String roomNumber, String roomType, String cleanlinessStatus, String lastUpdate,
+            String dirtySince, String lastTurnaroundMinutes) {
         this.roomNumber = roomNumber;
         this.roomType = roomType;
         this.cleanlinessStatus = cleanlinessStatus;
         this.lastUpdate = lastUpdate;
+        this.dirtySince = dirtySince;
+        this.lastTurnaroundMinutes = lastTurnaroundMinutes;
     }
 
     public String getRoomNumber() {
@@ -48,6 +57,22 @@ public class Room implements Serializable {
 
     public void setLastUpdate(String lastUpdate) {
         this.lastUpdate = lastUpdate;
+    }
+
+    public String getDirtySince() {
+        return dirtySince;
+    }
+
+    public void setDirtySince(String dirtySince) {
+        this.dirtySince = dirtySince;
+    }
+
+    public String getLastTurnaroundMinutes() {
+        return lastTurnaroundMinutes;
+    }
+
+    public void setLastTurnaroundMinutes(String lastTurnaroundMinutes) {
+        this.lastTurnaroundMinutes = lastTurnaroundMinutes;
     }
 
     @Override
