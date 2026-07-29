@@ -3,6 +3,7 @@ package entity;
 import java.io.Serializable;
 
 /**
+ * To track the housekeeping one complete cycle from dirty to ready
  * @author Chang Han Yean
  */
 public class HousekeepingTurnoverLog implements Serializable {
