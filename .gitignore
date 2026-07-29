@@ -1,6 +1,10 @@
 # Compiled class file
 *.class
 
+# Build output directories
+/out/
+/build/
+
 # Log file
 *.log
 
@@ -22,3 +26,5 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+SYSTEM_RULES.md
+.cursor/rules/system-rules.mdc

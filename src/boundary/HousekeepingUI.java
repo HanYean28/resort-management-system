@@ -2,6 +2,7 @@ package boundary;
 
 import adt.ListInterface;
 import control.HousekeepingController;
+import entity.HousekeepingAuditReport;
 import entity.HousekeepingLog;
 import entity.HousekeepingShiftReport;
 import entity.Room;
@@ -29,7 +30,7 @@ public class HousekeepingUI {
             System.out.println(" [2] Update Room Cleanliness Status");
             System.out.println(" [3] Rollback Last Status Update (Undo)");
             System.out.println(" [4] Generate Report 1: Shift Turnover Performance");
-            System.out.println(" [5] Generate Report 2: Housekeeping Overview & Search");
+            System.out.println(" [5] Generate Report 2: Audit Trail & Activity Search");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
             System.out.print("Please enter choice (0-5): ");
@@ -58,7 +59,7 @@ public class HousekeepingUI {
                     handleShiftTurnoverReport();
                     break;
                 case 5:
-                    System.out.println("\nThis report is not implemented yet.");
+                    handleAuditTrailReport();
                     break;
                 case 0:
                     UIUtils.clearScreen();
@@ -176,6 +177,231 @@ public class HousekeepingUI {
         }
     }
 
+    private void handleAuditTrailReport() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 2: AUDIT TRAIL & ACTIVITY SEARCH");
+
+        String shiftCode = promptShiftSelection();
+        if (shiftCode == null) {
+            System.out.println("\nReport generation cancelled.");
+            return;
+        }
+
+        String[] scopeSelection = promptAuditScope();
+        if (scopeSelection == null) {
+            System.out.println("\nReport generation cancelled.");
+            return;
+        }
+        String scopeMode = scopeSelection[0];
+        String roomNumberFilter = scopeSelection[1];
+        String roomTypeFilter = scopeSelection[2];
+
+        String transitionFilter = promptTransitionFilter();
+        if (transitionFilter == null) {
+            System.out.println("\nReport generation cancelled.");
+            return;
+        }
+
+        String sortCode = promptSortOrder();
+        if (sortCode == null) {
+            System.out.println("\nReport generation cancelled.");
+            return;
+        }
+
+        HousekeepingAuditReport report = manager.generateAuditTrailReport(
+                scopeMode, shiftCode, roomNumberFilter, roomTypeFilter, transitionFilter, sortCode);
+
+        while (true) {
+            UIUtils.clearScreen();
+            displayAuditTrailReport(report);
+
+            System.out.println();
+            UIUtils.printSectionLine();
+            System.out.println(" [REPORT ACTIONS]");
+            System.out.println(" [1] Save report to file");
+            System.out.println(" [0] Return to menu (do not save)");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-1): ");
+
+            Integer action = readIntOption(0, 1);
+            if (action == null) {
+                System.out.println("\nInvalid input! Please enter a number.");
+                UIUtils.pressEnterToContinue(scanner);
+                continue;
+            }
+            if (action == 0) {
+                System.out.println("\nReturning to menu without saving.");
+                return;
+            }
+
+            if (!confirmSaveAuditReport(report)) {
+                continue;
+            }
+
+            String savedPath = manager.saveAuditTrailReport(report);
+            if (savedPath != null) {
+                System.out.println("\n[SUCCESS] Saved to: " + savedPath);
+            } else {
+                UIUtils.printError("Unable to save report file.");
+            }
+            return;
+        }
+    }
+
+    private void displayAuditTrailReport(HousekeepingAuditReport report) {
+        ListInterface<String> lines = manager.buildAuditReportLines(report);
+        for (int i = 1; i <= lines.getNumberOfEntries(); i++) {
+            System.out.println(lines.getEntry(i));
+        }
+    }
+
+    private boolean confirmSaveAuditReport(HousekeepingAuditReport report) {
+        if (!manager.auditReportFileExists(report)) {
+            return true;
+        }
+
+        while (true) {
+            UIUtils.clearScreen();
+            System.out.println("==================================================================");
+            System.out.println("                    REPORT EXPORT & OPTIONS");
+            System.out.println("==================================================================");
+            System.out.println("[NOTICE] Saved file detected: " + manager.getAuditReportDisplayPath(report));
+            System.out.println("\nChoose Action:");
+            System.out.println("  [1] Overwrite & Update Saved Report");
+            System.out.println("  [0] Do Not Save (View Only)");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-1): ");
+
+            Integer choice = readIntOption(0, 1);
+            if (choice == null) {
+                System.out.println("\nInvalid input! Please enter a number.");
+                UIUtils.pressEnterToContinue(scanner);
+                continue;
+            }
+            return choice == 1;
+        }
+    }
+
+    private String[] promptAuditScope() {
+        while (true) {
+            System.out.println("\nSelect audit scope:");
+            System.out.println(" [1] Specific Room");
+            System.out.println(" [2] Room Type");
+            System.out.println(" [3] Shift Activity (all rooms in shift)");
+            System.out.println(" [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-3): ");
+
+            Integer choice = readIntOption(0, 3);
+            if (choice == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 3.");
+                continue;
+            }
+            if (choice == 0) {
+                return null;
+            }
+            if (choice == 1) {
+                while (true) {
+                    System.out.print("\nEnter Room Number (or 0 to go back): ");
+                    String roomNumber = scanner.nextLine().trim();
+                    if (roomNumber.equals("0")) {
+                        break;
+                    }
+                    if (roomNumber.isEmpty()) {
+                        System.out.println("\nRoom number cannot be empty.");
+                        continue;
+                    }
+                    if (manager.getRoom(roomNumber) == null) {
+                        System.out.println("\nRoom '" + roomNumber + "' not found.");
+                        continue;
+                    }
+                    return new String[] {
+                            HousekeepingController.SCOPE_ROOM,
+                            roomNumber,
+                            HousekeepingController.FILTER_ALL
+                    };
+                }
+                continue;
+            }
+            if (choice == 2) {
+                String roomType = promptRoomTypeFilter();
+                if (roomType == null) {
+                    continue;
+                }
+                return new String[] {
+                        HousekeepingController.SCOPE_ROOM_TYPE,
+                        HousekeepingController.FILTER_ALL,
+                        roomType
+                    };
+            }
+            return new String[] {
+                    HousekeepingController.SCOPE_SHIFT,
+                    HousekeepingController.FILTER_ALL,
+                    HousekeepingController.FILTER_ALL
+            };
+        }
+    }
+
+    private String promptTransitionFilter() {
+        while (true) {
+            System.out.println("\nApply transition filter:");
+            System.out.println(" [1] All Transitions");
+            System.out.println(" [2] To Ready");
+            System.out.println(" [3] To Dirty");
+            System.out.println(" [4] Completions (Inspected --> Ready)");
+            System.out.println(" [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-4): ");
+
+            Integer choice = readIntOption(0, 4);
+            if (choice == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 4.");
+                continue;
+            }
+            if (choice == 0) {
+                return null;
+            }
+            if (choice == 1) {
+                return HousekeepingController.TRANSITION_ALL;
+            }
+            if (choice == 2) {
+                return HousekeepingController.TRANSITION_TO_READY;
+            }
+            if (choice == 3) {
+                return HousekeepingController.TRANSITION_TO_DIRTY;
+            }
+            return HousekeepingController.TRANSITION_COMPLETION;
+        }
+    }
+
+    private String promptSortOrder() {
+        while (true) {
+            System.out.println("\nSelect sort order:");
+            System.out.println(" [1] Newest First");
+            System.out.println(" [2] Oldest First");
+            System.out.println(" [3] Room Number");
+            System.out.println(" [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-3): ");
+
+            Integer choice = readIntOption(0, 3);
+            if (choice == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 3.");
+                continue;
+            }
+            if (choice == 0) {
+                return null;
+            }
+            if (choice == 1) {
+                return HousekeepingController.SORT_TIMESTAMP_DESC;
+            }
+            if (choice == 2) {
+                return HousekeepingController.SORT_TIMESTAMP_ASC;
+            }
+            return HousekeepingController.SORT_ROOM_NUMBER;
+        }
+    }
+
     private void handleShiftTurnoverReport() {
         UIUtils.clearScreen();
         UIUtils.printHeader("REPORT 1: SHIFT TURNOVER PERFORMANCE");
@@ -266,63 +492,67 @@ public class HousekeepingUI {
     }
 
     private String promptShiftSelection() {
-        System.out.println("\nSelect shift window for turnover analysis:");
-        System.out.println(" [1] Current Shift (auto-detect)");
-        System.out.println(" [2] Morning Shift (07:00-14:59)");
-        System.out.println(" [3] Afternoon Shift (15:00-22:59)");
-        System.out.println(" [4] Night Shift (23:00-06:59)");
-        System.out.println(" [0] Cancel");
-        UIUtils.printSectionLine();
-        System.out.print("Please enter choice (0-4): ");
+        while (true) {
+            System.out.println("\nSelect shift window for turnover analysis:");
+            System.out.println(" [1] Current Shift (auto-detect)");
+            System.out.println(" [2] Morning Shift (07:00-14:59)");
+            System.out.println(" [3] Afternoon Shift (15:00-22:59)");
+            System.out.println(" [4] Night Shift (23:00-06:59)");
+            System.out.println(" [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-4): ");
 
-        Integer choice = readIntOption(0, 4);
-        if (choice == null) {
-            System.out.println("\nInvalid input! Please enter a number.");
-            return null;
+            Integer choice = readIntOption(0, 4);
+            if (choice == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 4.");
+                continue;
+            }
+            if (choice == 0) {
+                return null;
+            }
+            if (choice == 1) {
+                return HousekeepingController.SHIFT_CURRENT;
+            }
+            if (choice == 2) {
+                return HousekeepingController.SHIFT_MORNING;
+            }
+            if (choice == 3) {
+                return HousekeepingController.SHIFT_AFTERNOON;
+            }
+            return HousekeepingController.SHIFT_NIGHT;
         }
-        if (choice == 0) {
-            return null;
-        }
-        if (choice == 1) {
-            return HousekeepingController.SHIFT_CURRENT;
-        }
-        if (choice == 2) {
-            return HousekeepingController.SHIFT_MORNING;
-        }
-        if (choice == 3) {
-            return HousekeepingController.SHIFT_AFTERNOON;
-        }
-        return HousekeepingController.SHIFT_NIGHT;
     }
 
     private String promptRoomTypeFilter() {
-        System.out.println("\nApply room type filter:");
-        System.out.println(" [1] All Room Types");
-        System.out.println(" [2] Deluxe");
-        System.out.println(" [3] Standard");
-        System.out.println(" [4] Suite");
-        System.out.println(" [0] Cancel");
-        UIUtils.printSectionLine();
-        System.out.print("Please enter choice (0-4): ");
+        while (true) {
+            System.out.println("\nApply room type filter:");
+            System.out.println(" [1] All Room Types");
+            System.out.println(" [2] Deluxe");
+            System.out.println(" [3] Standard");
+            System.out.println(" [4] Suite");
+            System.out.println(" [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-4): ");
 
-        Integer choice = readIntOption(0, 4);
-        if (choice == null) {
-            System.out.println("\nInvalid input! Please enter a number.");
-            return null;
+            Integer choice = readIntOption(0, 4);
+            if (choice == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 4.");
+                continue;
+            }
+            if (choice == 0) {
+                return null;
+            }
+            if (choice == 1) {
+                return HousekeepingController.FILTER_ALL;
+            }
+            if (choice == 2) {
+                return "Deluxe";
+            }
+            if (choice == 3) {
+                return "Standard";
+            }
+            return "Suite";
         }
-        if (choice == 0) {
-            return null;
-        }
-        if (choice == 1) {
-            return HousekeepingController.FILTER_ALL;
-        }
-        if (choice == 2) {
-            return "Deluxe";
-        }
-        if (choice == 3) {
-            return "Standard";
-        }
-        return "Suite";
     }
 
     private void handleRollback() {

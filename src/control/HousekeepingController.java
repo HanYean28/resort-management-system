@@ -4,6 +4,7 @@ import adt.ArrayList;
 import adt.ArrayStack;
 import adt.ListInterface;
 import adt.StackInterface;
+import entity.HousekeepingAuditReport;
 import entity.HousekeepingLog;
 import entity.HousekeepingShiftReport;
 import entity.HousekeepingTurnoverLog;
@@ -26,19 +27,39 @@ import java.time.format.DateTimeFormatter;
  * @author Chang Han Yean
  */
 public class HousekeepingController {
+    // --- File paths & report settings (internal) ---
     private static final String DATA_FILE = "rooms.txt";
     private static final String TURNOVER_LOG_FILE = "housekeeping_turnover_log.txt";
-    private static final String STATUS_LOG_FILE = "housekeeping_status_log.txt";
+    private static final String AUDIT_LOG_FILE = "housekeeping_audit_log.txt";   // every status change (Report 2 source)
     private static final String REPORT_DIR = "reports" + File.separator + "housekeeping" + File.separator;
     private static final double BENCHMARK_MINUTES = 45.0;
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final DateTimeFormatter REPORT_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
+    // --- Shift window (Report 1 & 2) — which time period to analyse ---
     public static final String SHIFT_CURRENT = "CURRENT";
     public static final String SHIFT_MORNING = "MORNING";
     public static final String SHIFT_AFTERNOON = "AFTERNOON";
     public static final String SHIFT_NIGHT = "NIGHT";
+
+    // --- Generic filter sentinel — means "no filter on this field" ---
     public static final String FILTER_ALL = "ALL";
+
+    // --- Report 2: transition filter — which status changes to include ---
+    public static final String TRANSITION_ALL = "ALL";
+    public static final String TRANSITION_TO_READY = "TO_READY";
+    public static final String TRANSITION_TO_DIRTY = "TO_DIRTY";
+    public static final String TRANSITION_COMPLETION = "COMPLETION";
+
+    // --- Report 2: sort order for audit activity rows ---
+    public static final String SORT_TIMESTAMP_DESC = "TIMESTAMP_DESC";
+    public static final String SORT_TIMESTAMP_ASC = "TIMESTAMP_ASC";
+    public static final String SORT_ROOM_NUMBER = "ROOM_NUMBER";
+
+    // --- Report 2: audit scope — what subset of rooms to show ---
+    public static final String SCOPE_ROOM = "ROOM";
+    public static final String SCOPE_ROOM_TYPE = "ROOM_TYPE";
+    public static final String SCOPE_SHIFT = "SHIFT";
 
     private static final String[] STATUS_PHASES = {
             "Dirty",
@@ -49,17 +70,17 @@ public class HousekeepingController {
 
     private ListInterface<Room> rooms;
     private ListInterface<HousekeepingTurnoverLog> turnoverLogs;
-    private ListInterface<HousekeepingLog> statusLogs;
+    private ListInterface<HousekeepingLog> auditLogs;
     private StackInterface<HousekeepingLog> rollbackStack;
 
     public HousekeepingController() {
         rooms = new ArrayList<>();
         turnoverLogs = new ArrayList<>();
-        statusLogs = new ArrayList<>();
+        auditLogs = new ArrayList<>();
         rollbackStack = new ArrayStack<>();
         loadRoomsFromFile();
         loadTurnoverLogsFromFile();
-        loadStatusLogsFromFile();
+        loadAuditLogsFromFile();
     }
 
     /**
@@ -193,14 +214,14 @@ public class HousekeepingController {
 
         HousekeepingLog log = new HousekeepingLog(room, currentStatus, targetStatus, timestamp);
         rollbackStack.push(log);
-        appendStatusLog(log);
+        appendAuditLog(log);
         saveRoomsToFile();
         return null;
     }
 
-    private void loadStatusLogsFromFile() {
-        statusLogs.clear();
-        try (BufferedReader br = new BufferedReader(new FileReader(STATUS_LOG_FILE))) {
+    private void loadAuditLogsFromFile() {
+        auditLogs.clear();
+        try (BufferedReader br = new BufferedReader(new FileReader(AUDIT_LOG_FILE))) {
             String line;
             while ((line = br.readLine()) != null) {
                 if (line.trim().isEmpty()) {
@@ -210,52 +231,18 @@ public class HousekeepingController {
                 if (parts.length >= 4) {
                     Room room = getRoom(parts[0]);
                     if (room != null) {
-                        statusLogs.add(new HousekeepingLog(room, parts[1], parts[2], parts[3]));
+                        auditLogs.add(new HousekeepingLog(room, parts[1], parts[2], parts[3]));
                     }
                 }
             }
         } catch (IOException e) {
             // If file doesn't exist, start with empty list
         }
-
-        if (statusLogs.isEmpty()) {
-            seedStatusLogsFromTurnoverLogs();
-        }
     }
 
-    private void seedStatusLogsFromTurnoverLogs() {
-        for (int i = 1; i <= turnoverLogs.getNumberOfEntries(); i++) {
-            HousekeepingTurnoverLog turnover = turnoverLogs.getEntry(i);
-            Room room = turnover.getRoom();
-            statusLogs.add(new HousekeepingLog(room, "Ready", "Dirty", turnover.getDirtyTimestamp()));
-            statusLogs.add(new HousekeepingLog(room, "Inspected", "Ready", turnover.getReadyTimestamp()));
-        }
-        rewriteStatusLogFile();
-    }
-
-    private void rewriteStatusLogFile() {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(STATUS_LOG_FILE))) {
-            for (int i = 1; i <= statusLogs.getNumberOfEntries(); i++) {
-                HousekeepingLog log = statusLogs.getEntry(i);
-                bw.write(log.getRoom().getRoomNumber() + "|" + log.getOldStatus() + "|" + log.getNewStatus()
-                        + "|" + log.getTimestamp());
-                bw.newLine();
-            }
-        } catch (IOException e) {
-            // Handle logging or exception propagation
-        }
-    }
-
-    private void appendStatusLog(HousekeepingLog log) {
-        appendStatusLog(log, true);
-    }
-
-    private void appendStatusLog(HousekeepingLog log, boolean writeToFile) {
-        statusLogs.add(log);
-        if (!writeToFile) {
-            return;
-        }
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(STATUS_LOG_FILE, true))) {
+    private void appendAuditLog(HousekeepingLog log) {
+        auditLogs.add(log);
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(AUDIT_LOG_FILE, true))) {
             bw.write(log.getRoom().getRoomNumber() + "|" + log.getOldStatus() + "|" + log.getNewStatus()
                     + "|" + log.getTimestamp());
             bw.newLine();
@@ -300,7 +287,6 @@ public class HousekeepingController {
         ListInterface<Room> filteredRooms = filterRoomsByType(snapshotRooms, roomTypeFilter);
         ListInterface<StatusPhaseRow> phaseRows = buildStatusPhaseBreakdown(filteredRooms);
         ListInterface<HousekeepingTurnoverLog> shiftTurnovers = searchTurnoversForShift(shiftCode, roomTypeFilter);
-        selectionSortTurnoversByMinutesAscending(shiftTurnovers);
 
         double averageMinutes = 0.0;
         int sampleSize = shiftTurnovers.getNumberOfEntries();
@@ -512,7 +498,7 @@ public class HousekeepingController {
 
     private ListInterface<Room> reconstructRoomsAt(LocalDateTime snapshotPoint) {
         ListInterface<Room> snapshot = cloneAllRooms();
-        ListInterface<HousekeepingLog> logsAfterSnapshot = searchStatusLogsAfter(snapshotPoint);
+        ListInterface<HousekeepingLog> logsAfterSnapshot = searchAuditLogsAfter(snapshotPoint);
         selectionSortLogsByTimestampDescending(logsAfterSnapshot);
 
         for (int i = 1; i <= logsAfterSnapshot.getNumberOfEntries(); i++) {
@@ -551,10 +537,10 @@ public class HousekeepingController {
         return null;
     }
 
-    private ListInterface<HousekeepingLog> searchStatusLogsAfter(LocalDateTime snapshotPoint) {
+    private ListInterface<HousekeepingLog> searchAuditLogsAfter(LocalDateTime snapshotPoint) {
         ListInterface<HousekeepingLog> matched = new ArrayList<>();
-        for (int i = 1; i <= statusLogs.getNumberOfEntries(); i++) {
-            HousekeepingLog log = statusLogs.getEntry(i);
+        for (int i = 1; i <= auditLogs.getNumberOfEntries(); i++) {
+            HousekeepingLog log = auditLogs.getEntry(i);
             if (!isValidTimestamp(log.getTimestamp())) {
                 continue;
             }
@@ -577,7 +563,7 @@ public class HousekeepingController {
                 continue;
             }
 
-            HousekeepingLog latestBefore = findLatestStatusLogBefore(room.getRoomNumber(), snapshotPoint);
+            HousekeepingLog latestBefore = findLatestAuditLogBefore(room.getRoomNumber(), snapshotPoint);
             if (latestBefore != null) {
                 room.setCleanlinessStatus(latestBefore.getNewStatus());
                 room.setLastUpdate(latestBefore.getTimestamp());
@@ -585,12 +571,12 @@ public class HousekeepingController {
         }
     }
 
-    private HousekeepingLog findLatestStatusLogBefore(String roomNumber, LocalDateTime snapshotPoint) {
+    private HousekeepingLog findLatestAuditLogBefore(String roomNumber, LocalDateTime snapshotPoint) {
         HousekeepingLog latest = null;
         LocalDateTime latestTime = null;
 
-        for (int i = 1; i <= statusLogs.getNumberOfEntries(); i++) {
-            HousekeepingLog log = statusLogs.getEntry(i);
+        for (int i = 1; i <= auditLogs.getNumberOfEntries(); i++) {
+            HousekeepingLog log = auditLogs.getEntry(i);
             if (!log.getRoom().getRoomNumber().equalsIgnoreCase(roomNumber)) {
                 continue;
             }
@@ -685,23 +671,6 @@ public class HousekeepingController {
         }
 
         return matched;
-    }
-
-    private void selectionSortTurnoversByMinutesAscending(ListInterface<HousekeepingTurnoverLog> list) {
-        int n = list.getNumberOfEntries();
-        for (int i = 1; i <= n - 1; i++) {
-            int minIndex = i;
-            for (int j = i + 1; j <= n; j++) {
-                if (list.getEntry(j).getTurnaroundMinutes() < list.getEntry(minIndex).getTurnaroundMinutes()) {
-                    minIndex = j;
-                }
-            }
-            if (minIndex != i) {
-                HousekeepingTurnoverLog temp = list.getEntry(i);
-                list.replace(i, list.getEntry(minIndex));
-                list.replace(minIndex, temp);
-            }
-        }
     }
 
     private void insertionSortRoomsByNumber(ListInterface<Room> list) {
@@ -918,7 +887,7 @@ public class HousekeepingController {
             String timestamp = getCurrentTimestamp();
             room.setCleanlinessStatus(lastLog.getOldStatus());
             room.setLastUpdate(timestamp);
-            appendStatusLog(new HousekeepingLog(room, lastLog.getNewStatus(), lastLog.getOldStatus(), timestamp));
+            appendAuditLog(new HousekeepingLog(room, lastLog.getNewStatus(), lastLog.getOldStatus(), timestamp));
             saveRoomsToFile();
             return lastLog;
         }
@@ -984,6 +953,423 @@ public class HousekeepingController {
             return new String[] { "Dirty" };
         }
         return new String[0];
+    }
+
+    /**
+     * Generates Report 2 with search, filter, and sort applied to status log data.
+     */
+    public HousekeepingAuditReport generateAuditTrailReport(String scopeMode, String shiftCode,
+            String roomNumberFilter, String roomTypeFilter, String transitionFilter, String sortCode) {
+        LocalDateTime now = LocalDateTime.now();
+        String resolvedShift = shiftCode.equals(SHIFT_CURRENT) ? detectCurrentShiftCode(now) : shiftCode;
+        LocalDateTime[] window = resolveShiftWindow(shiftCode, now);
+        String dateWindow = window[0].format(TIMESTAMP_FORMAT) + " to " + window[1].format(TIMESTAMP_FORMAT);
+        String shiftTarget = buildShiftTargetLabel(resolvedShift, window[0]);
+
+        ListInterface<HousekeepingLog> matched = searchAuditLogsForReport(
+                scopeMode, window[0], window[1], roomNumberFilter, roomTypeFilter, transitionFilter);
+        sortAuditLogs(matched, sortCode);
+
+        int totalEvents = matched.getNumberOfEntries();
+        int completionCount = countCompletions(matched);
+        int resetCount = countResets(matched);
+        String mostActiveRoom = scopeMode.equals(SCOPE_ROOM)
+                ? "N/A (single room scope)"
+                : findMostActiveRoom(matched);
+
+        String reportTarget = buildAuditReportTargetLabel(scopeMode, shiftTarget, roomNumberFilter, roomTypeFilter);
+        String transitionLabel = resolveTransitionLabel(transitionFilter);
+        String sortLabel = resolveSortLabel(sortCode);
+        String reportFileName = buildAuditReportFileName(resolvedShift, window[0], scopeMode, roomNumberFilter,
+                roomTypeFilter);
+
+        HousekeepingAuditReport report = new HousekeepingAuditReport(
+                now.format(TIMESTAMP_FORMAT),
+                reportTarget,
+                dateWindow,
+                roomTypeFilter.equals(FILTER_ALL) ? "All Room Types" : roomTypeFilter,
+                roomNumberFilter.equals(FILTER_ALL) ? "All Rooms" : roomNumberFilter,
+                transitionLabel,
+                sortLabel,
+                matched,
+                totalEvents,
+                completionCount,
+                resetCount,
+                mostActiveRoom,
+                reportFileName);
+        enrichAuditRevisionMetadata(report);
+        return report;
+    }
+
+    /**
+     * Returns true if the authoritative audit report file already exists.
+     */
+    public boolean auditReportFileExists(HousekeepingAuditReport report) {
+        return new File(REPORT_DIR + report.getReportFileName()).exists();
+    }
+
+    public String getAuditReportDisplayPath(HousekeepingAuditReport report) {
+        return formatReportDisplayPath(report.getReportFileName());
+    }
+
+    /**
+     * Persists the audit report to the authoritative file for this filter set (overwrite mode).
+     */
+    public String saveAuditTrailReport(HousekeepingAuditReport report) {
+        enrichAuditRevisionMetadata(report);
+        String fileName = report.getReportFileName();
+        String filePath = REPORT_DIR + fileName;
+
+        File directory = new File(REPORT_DIR);
+        if (!directory.exists()) {
+            directory.mkdirs();
+        }
+
+        ListInterface<String> lines = buildAuditReportLines(report);
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(filePath, false))) {
+            for (int i = 1; i <= lines.getNumberOfEntries(); i++) {
+                bw.write(lines.getEntry(i));
+                bw.newLine();
+            }
+        } catch (IOException e) {
+            return null;
+        }
+
+        String displayPath = formatReportDisplayPath(fileName);
+        report.setSavedFilePath(displayPath);
+        return displayPath;
+    }
+
+    /**
+     * Builds formatted audit report lines for console display or file export.
+     */
+    public ListInterface<String> buildAuditReportLines(HousekeepingAuditReport report) {
+        ListInterface<String> lines = new ArrayList<>();
+        boolean singleRoomScope = !report.getRoomNumberFilter().equals("All Rooms");
+
+        lines.add("==================================================================");
+        lines.add("     REPORT 2: HOUSEKEEPING AUDIT TRAIL & ACTIVITY SEARCH");
+        lines.add("==================================================================");
+        lines.add("Report Target : " + report.getReportTarget());
+        lines.add("First Created : " + report.getFirstCreatedAt());
+        lines.add("Last Updated  : " + report.getLastUpdatedAt() + " (Revision #" + report.getRevisionNumber() + ")");
+        lines.add("Date Window   : " + report.getDateWindow());
+        lines.add("Filters       : Transition: " + report.getTransitionFilter()
+                + " | Sort: " + report.getSortLabel());
+        lines.add("------------------------------------------------------------------");
+        lines.add("");
+        lines.add(" [MANAGEMENT SUMMARY]");
+        lines.add("  Total Status Events     : " + report.getTotalEvents());
+        lines.add("  Room Completions        : " + report.getCompletionCount());
+        lines.add("  Dirty Resets / Aborts   : " + report.getResetCount());
+        lines.add("  Most Active Room        : " + report.getMostActiveRoom());
+        lines.add("");
+        lines.add(" [DECISION NOTE]");
+        lines.add("  " + buildAuditDecisionNote(report));
+        lines.add("");
+        lines.add(" [ACTIVITY DETAIL]");
+
+        if (report.getActivityRows().isEmpty()) {
+            lines.add("  No matching audit events found for the selected filters.");
+        } else if (singleRoomScope) {
+            Room room = getRoom(report.getRoomNumberFilter());
+            if (room != null) {
+                lines.add("  Room Target     : Room " + room.getRoomNumber() + " (" + room.getRoomType() + ")");
+                lines.add("  Current Status  : " + room.getCleanlinessStatus());
+                lines.add("");
+            }
+            lines.add(String.format("  %3s | %-19s | %s", "#", "Timestamp", "Status Transition"));
+            lines.add("  ---|---------------------|---------------------------");
+            for (int i = 1; i <= report.getActivityRows().getNumberOfEntries(); i++) {
+                HousekeepingLog log = report.getActivityRows().getEntry(i);
+                lines.add(String.format("  %3d | %-19s | %s --> %s",
+                        i, log.getTimestamp(), log.getOldStatus(), log.getNewStatus()));
+            }
+        } else {
+            lines.add(String.format("  %3s | %-6s | %-10s | %-19s | %s",
+                    "#", "Room", "Type", "Timestamp", "Transition"));
+            lines.add("  ---|--------|------------|---------------------|---------------------------");
+            for (int i = 1; i <= report.getActivityRows().getNumberOfEntries(); i++) {
+                HousekeepingLog log = report.getActivityRows().getEntry(i);
+                lines.add(String.format("  %3d | %-6s | %-10s | %-19s | %s --> %s",
+                        i,
+                        log.getRoom().getRoomNumber(),
+                        log.getRoom().getRoomType(),
+                        log.getTimestamp(),
+                        log.getOldStatus(),
+                        log.getNewStatus()));
+            }
+        }
+
+        lines.add("------------------------------------------------------------------");
+        return lines;
+    }
+
+    private ListInterface<HousekeepingLog> searchAuditLogsForReport(String scopeMode,
+            LocalDateTime shiftStart, LocalDateTime shiftEnd,
+            String roomNumberFilter, String roomTypeFilter, String transitionFilter) {
+        ListInterface<HousekeepingLog> matched = new ArrayList<>();
+
+        for (int i = 1; i <= auditLogs.getNumberOfEntries(); i++) {
+            HousekeepingLog log = auditLogs.getEntry(i);
+            if (!isValidTimestamp(log.getTimestamp())) {
+                continue;
+            }
+
+            LocalDateTime changeTime = LocalDateTime.parse(log.getTimestamp(), TIMESTAMP_FORMAT);
+            if (changeTime.isBefore(shiftStart) || changeTime.isAfter(shiftEnd)) {
+                continue;
+            }
+
+            if (scopeMode.equals(SCOPE_ROOM)
+                    && !log.getRoom().getRoomNumber().equalsIgnoreCase(roomNumberFilter)) {
+                continue;
+            }
+
+            if (scopeMode.equals(SCOPE_ROOM_TYPE)
+                    && !log.getRoom().getRoomType().equalsIgnoreCase(roomTypeFilter)) {
+                continue;
+            }
+
+            if (!matchesTransitionFilter(log, transitionFilter)) {
+                continue;
+            }
+
+            matched.add(log);
+        }
+
+        return matched;
+    }
+
+    private boolean matchesTransitionFilter(HousekeepingLog log, String transitionFilter) {
+        if (transitionFilter.equals(TRANSITION_ALL)) {
+            return true;
+        }
+        if (transitionFilter.equals(TRANSITION_TO_READY)) {
+            return log.getNewStatus().equals("Ready");
+        }
+        if (transitionFilter.equals(TRANSITION_TO_DIRTY)) {
+            return log.getNewStatus().equals("Dirty");
+        }
+        if (transitionFilter.equals(TRANSITION_COMPLETION)) {
+            return log.getOldStatus().equals("Inspected") && log.getNewStatus().equals("Ready");
+        }
+        return true;
+    }
+
+    private void sortAuditLogs(ListInterface<HousekeepingLog> list, String sortCode) {
+        if (list.isEmpty()) {
+            return;
+        }
+        if (sortCode.equals(SORT_TIMESTAMP_ASC)) {
+            selectionSortLogsByTimestampAscending(list);
+        } else if (sortCode.equals(SORT_ROOM_NUMBER)) {
+            insertionSortLogsByRoomNumberThenTimestamp(list);
+        } else {
+            selectionSortLogsByTimestampDescending(list);
+        }
+    }
+
+    private void selectionSortLogsByTimestampAscending(ListInterface<HousekeepingLog> list) {
+        int n = list.getNumberOfEntries();
+        for (int i = 1; i <= n - 1; i++) {
+            int minIndex = i;
+            for (int j = i + 1; j <= n; j++) {
+                LocalDateTime timeJ = LocalDateTime.parse(list.getEntry(j).getTimestamp(), TIMESTAMP_FORMAT);
+                LocalDateTime timeMin = LocalDateTime.parse(list.getEntry(minIndex).getTimestamp(), TIMESTAMP_FORMAT);
+                if (timeJ.isBefore(timeMin)) {
+                    minIndex = j;
+                }
+            }
+            if (minIndex != i) {
+                HousekeepingLog temp = list.getEntry(i);
+                list.replace(i, list.getEntry(minIndex));
+                list.replace(minIndex, temp);
+            }
+        }
+    }
+
+    private void insertionSortLogsByRoomNumberThenTimestamp(ListInterface<HousekeepingLog> list) {
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
+            HousekeepingLog key = list.getEntry(i);
+            int j = i - 1;
+            while (j >= 1 && compareLogsByRoomThenTimestamp(list.getEntry(j), key) > 0) {
+                list.replace(j + 1, list.getEntry(j));
+                j--;
+            }
+            list.replace(j + 1, key);
+        }
+    }
+
+    private int compareLogsByRoomThenTimestamp(HousekeepingLog left, HousekeepingLog right) {
+        int roomCompare = left.getRoom().getRoomNumber().compareToIgnoreCase(right.getRoom().getRoomNumber());
+        if (roomCompare != 0) {
+            return roomCompare;
+        }
+        LocalDateTime leftTime = LocalDateTime.parse(left.getTimestamp(), TIMESTAMP_FORMAT);
+        LocalDateTime rightTime = LocalDateTime.parse(right.getTimestamp(), TIMESTAMP_FORMAT);
+        return leftTime.compareTo(rightTime);
+    }
+
+    private int countCompletions(ListInterface<HousekeepingLog> logs) {
+        int count = 0;
+        for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
+            HousekeepingLog log = logs.getEntry(i);
+            if (log.getOldStatus().equals("Inspected") && log.getNewStatus().equals("Ready")) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int countResets(ListInterface<HousekeepingLog> logs) {
+        int count = 0;
+        for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
+            HousekeepingLog log = logs.getEntry(i);
+            if (log.getNewStatus().equals("Dirty") && !log.getOldStatus().equals("Ready")) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private String findMostActiveRoom(ListInterface<HousekeepingLog> logs) {
+        if (logs.isEmpty()) {
+            return "N/A";
+        }
+
+        String[] roomNumbers = new String[logs.getNumberOfEntries()];
+        int[] counts = new int[logs.getNumberOfEntries()];
+        int uniqueRooms = 0;
+
+        for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
+            String roomNumber = logs.getEntry(i).getRoom().getRoomNumber();
+            int index = findRoomCountIndex(roomNumbers, counts, uniqueRooms, roomNumber);
+            if (index == -1) {
+                roomNumbers[uniqueRooms] = roomNumber;
+                counts[uniqueRooms] = 1;
+                uniqueRooms++;
+            } else {
+                counts[index]++;
+            }
+        }
+
+        int maxIndex = 0;
+        for (int i = 1; i < uniqueRooms; i++) {
+            if (counts[i] > counts[maxIndex]) {
+                maxIndex = i;
+            }
+        }
+
+        return roomNumbers[maxIndex] + " (" + counts[maxIndex] + " events)";
+    }
+
+    private int findRoomCountIndex(String[] roomNumbers, int[] counts, int size, String roomNumber) {
+        for (int i = 0; i < size; i++) {
+            if (roomNumbers[i].equalsIgnoreCase(roomNumber)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private String buildAuditReportTargetLabel(String scopeMode, String shiftTarget,
+            String roomNumberFilter, String roomTypeFilter) {
+        if (scopeMode.equals(SCOPE_ROOM)) {
+            Room room = getRoom(roomNumberFilter);
+            String roomType = room != null ? room.getRoomType() : "Unknown";
+            return shiftTarget + " — Room " + roomNumberFilter + " (" + roomType + ")";
+        }
+        if (scopeMode.equals(SCOPE_ROOM_TYPE)) {
+            return shiftTarget + " — " + roomTypeFilter + " Rooms";
+        }
+        return shiftTarget + " — Shift Activity";
+    }
+
+    private String buildAuditReportFileName(String shiftCode, LocalDateTime windowStart,
+            String scopeMode, String roomNumberFilter, String roomTypeFilter) {
+        String shiftName;
+        if (shiftCode.equals(SHIFT_MORNING)) {
+            shiftName = "Morning";
+        } else if (shiftCode.equals(SHIFT_AFTERNOON)) {
+            shiftName = "Afternoon";
+        } else {
+            shiftName = "Night";
+        }
+
+        String suffix = "ShiftActivity";
+        if (scopeMode.equals(SCOPE_ROOM)) {
+            suffix = "Room" + roomNumberFilter;
+        } else if (scopeMode.equals(SCOPE_ROOM_TYPE)) {
+            suffix = roomTypeFilter;
+        }
+
+        return "REPORT2_" + windowStart.format(REPORT_DATE_FORMAT) + "_" + shiftName + "_" + suffix + ".txt";
+    }
+
+    private String resolveTransitionLabel(String transitionFilter) {
+        if (transitionFilter.equals(TRANSITION_TO_READY)) {
+            return "To Ready";
+        }
+        if (transitionFilter.equals(TRANSITION_TO_DIRTY)) {
+            return "To Dirty";
+        }
+        if (transitionFilter.equals(TRANSITION_COMPLETION)) {
+            return "Completions";
+        }
+        return "All Transitions";
+    }
+
+    private String resolveSortLabel(String sortCode) {
+        if (sortCode.equals(SORT_TIMESTAMP_ASC)) {
+            return "Oldest First";
+        }
+        if (sortCode.equals(SORT_ROOM_NUMBER)) {
+            return "Room Number";
+        }
+        return "Newest First";
+    }
+
+    private String buildAuditDecisionNote(HousekeepingAuditReport report) {
+        if (report.getTotalEvents() == 0) {
+            return "No audit activity recorded for this filter set. Verify shift window or broaden filters.";
+        }
+
+        if (report.getResetCount() > 0 && report.getResetCount() >= report.getCompletionCount()) {
+            return "Elevated abort/reset activity detected. Review attendant workflow and supervisor escalation paths.";
+        }
+
+        if (report.getCompletionCount() > 0 && report.getResetCount() == 0) {
+            return "Completion flow is stable with no abort/reset events in the selected window.";
+        }
+
+        if (report.getCompletionCount() == 0 && report.getTotalEvents() > 0) {
+            return "Activity exists but no room completions recorded. Prioritize inspection and ready approvals.";
+        }
+
+        return "Audit trail captured successfully. Cross-check most active room for workload balancing.";
+    }
+
+    private void enrichAuditRevisionMetadata(HousekeepingAuditReport report) {
+        File file = new File(REPORT_DIR + report.getReportFileName());
+        String now = getCurrentTimestamp();
+
+        if (!file.exists()) {
+            report.setFirstCreatedAt(now);
+            report.setLastUpdatedAt(now);
+            report.setRevisionNumber(1);
+            return;
+        }
+
+        String firstCreated = parseFirstCreatedFromFile(file);
+        if (firstCreated == null) {
+            firstCreated = now;
+        }
+
+        int existingRevision = parseRevisionFromFile(file);
+        report.setFirstCreatedAt(firstCreated);
+        report.setLastUpdatedAt(now);
+        report.setRevisionNumber(existingRevision + 1);
     }
 
     private String getCurrentTimestamp() {
