@@ -1,4 +1,4 @@
-101|Deluxe|Ready|2026-07-29 20:23:16|2026-07-20 18:15:49|13087.5
+101|Deluxe|Ready|N/A|N/A|N/A
 102|Standard|Ready|N/A|N/A|N/A
 103|Suite|Ready|N/A|N/A|N/A
 104|Deluxe|Ready|N/A|N/A|N/A

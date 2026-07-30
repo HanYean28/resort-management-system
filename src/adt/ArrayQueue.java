@@ -2,81 +2,103 @@ package adt;
 
 import java.io.Serializable;
 import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 /**
  * Adapted from: Frank M. Carrano, Data Structures and Algorithms in Java.
  * 
  * @author Frank M. Carrano
+ * @modified by: Chang Han Yean
  * @version 2.0
  * @param <T>
  */
+@SuppressWarnings("unchecked")
 public class ArrayQueue<T> implements QueueInterface<T>, Serializable {
 
   private T[] array;
-  private final static int frontIndex = 0;
-  private int backIndex;
+  private int numberOfEntries;
   private static final int DEFAULT_CAPACITY = 50;
 
   public ArrayQueue() {
     this(DEFAULT_CAPACITY);
   }
 
-  @SuppressWarnings("unchecked")
   public ArrayQueue(int initialCapacity) {
+    if (initialCapacity < 1) {
+      throw new IllegalArgumentException("Initial capacity must be greater than 0");
+    }
     array = (T[]) new Object[initialCapacity];
-    backIndex = -1;
+    numberOfEntries = 0;
   }
 
   @Override
   public void enqueue(T newEntry) {
-    if (isArrayFull()) {
-      throw new IllegalStateException("Queue is full.");
+    if (newEntry == null) {
+      throw new IllegalArgumentException("Cannot add null elements to Queue.");
+    }
+    
+    if (isFull()) {
+      doubleArray();
     }
 
-    backIndex++;
-    array[backIndex] = newEntry;
-  }
-
-  @Override
-  public T getFront() {
-    T front = null;
-    if (!isEmpty()) {
-      front = array[frontIndex];
-    }
-    return front;
+    array[numberOfEntries] = newEntry;
+    numberOfEntries++;
   }
 
   @Override
   public T dequeue() {
-    T front = null;
-    if (!isEmpty()) {
-      front = array[frontIndex]; // shift remaining array items forward one position
-      for (int i = frontIndex; i < backIndex; ++i) {
+    if (isEmpty()) {
+      return null;
+    }
+      T front = array[0];
+      for (int i = 0; i < numberOfEntries - 1; ++i) {
         array[i] = array[i + 1];
       }
-      array[backIndex] = null; // Clean reference
-      backIndex--;
+      // Clean reference
+      array[numberOfEntries - 1] = null;
+      numberOfEntries--;
+      return front;
+  }
+
+  @Override
+  public T getFront() {
+    if (isEmpty()) {
+      return null;
     }
-    return front;
+    return array[0];
   }
 
   @Override
   public boolean isEmpty() {
-    return frontIndex > backIndex;
+    return numberOfEntries == 0;
   }
 
   @Override
   public void clear() {
-    if (!isEmpty()) { // deallocates only the used portion
-      for (int index = frontIndex; index <= backIndex; index++) {
-        array[index] = null;
-      }
-      backIndex = -1;
+    if (isEmpty()) {
+      return;
     }
+    for (int i = 0; i < numberOfEntries; i++) {
+      array[i] = null;
+    }
+    numberOfEntries = 0;
+  }
+  @Override
+  public boolean isFull() {
+    return numberOfEntries == array.length;
   }
 
-  private boolean isArrayFull() {
-    return backIndex == array.length - 1;
+  @Override
+  public int size() {
+    return numberOfEntries;
+  }
+
+  private void doubleArray() {
+    T[] oldArray = array;
+    array = (T[]) new Object[oldArray.length * 2];
+    for (int i = 0; i < oldArray.length; i++) {
+      array[i] = oldArray[i];
+    }
   }
 
   @Override
@@ -93,18 +115,19 @@ public class ArrayQueue<T> implements QueueInterface<T>, Serializable {
 
     @Override
     public boolean hasNext() {
-      return nextIndex <= backIndex;
+      return nextIndex < numberOfEntries;
     }
 
     @Override
     public T next() {
-      if (hasNext()) {
-        T nextEntry = array[nextIndex];
-        nextIndex++; // advance iterator
-        return nextEntry;
-      } else {
-        return null;
+      if (!hasNext()) {
+        throw new NoSuchElementException("No more entries in queue iterator.");
       }
+      T nextEntry = array[nextIndex];
+      nextIndex++;
+      return nextEntry;
     }
   }
+
+
 }

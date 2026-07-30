@@ -4,6 +4,7 @@ package adt;
  * An interface for the ADT Stack.
  *
  * @author Frank M. Carrano
+ * @modified by: Chang Han Yean
  * @version 2.0
  * @param <T>
  */
@@ -43,4 +44,19 @@ public interface StackInterface<T> {
    * Task: Removes all entries from the stack
    */
   public void clear();
+
+  /**
+   * Task: Gets the number of entries in the stack.
+   *
+   * @return the integer number of entries in the stack
+   */
+  public int size();
+
+  /**
+   * Task: Sees whether the stack is full.
+   *
+   * @return true if the stack is full
+   */
+  public boolean isFull();
+
 } // end StackInterface
