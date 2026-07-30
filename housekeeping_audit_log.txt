@@ -1,4 +1,0 @@
-101|Ready|Dirty|2026-07-20 18:15:49
-101|Dirty|Cleaning In Progress|2026-07-29 20:23:00
-101|Cleaning In Progress|Inspected|2026-07-29 20:23:08
-101|Inspected|Ready|2026-07-29 20:23:16

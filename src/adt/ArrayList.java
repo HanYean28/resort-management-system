@@ -42,7 +42,12 @@ public class ArrayList<T> implements ListInterface<T>, Serializable {
     // add a new entry to the end of the list
     @Override
     public boolean add(T newEntry) {
-        if(isFull()) doubleArray();
+        if (newEntry == null) {
+            throw new IllegalArgumentException("Cannot add null elements to ArrayList.");
+        }
+        if(isFull()) {
+            doubleArray();
+        }
         
         array[numberOfEntries] = newEntry;
         numberOfEntries++;
@@ -54,7 +59,9 @@ public class ArrayList<T> implements ListInterface<T>, Serializable {
     @Override
     public boolean add(int newPosition, T newEntry) {
         if (newPosition >=1 && newPosition <= numberOfEntries + 1){
-            if(isFull()) doubleArray();
+            if(isFull()) {
+                doubleArray();
+            }
             for (int index = numberOfEntries; index >= newPosition; index--){
                 array[index] = array[index - 1];
             }

@@ -1,5 +1,6 @@
 package adt;
 
+import java.io.Serializable;
 /**
  * ArrayStack.java A class that implements the ADT Stack using an array.
  *
@@ -9,7 +10,7 @@ package adt;
  * @param <T>
  */
 @SuppressWarnings("unchecked")
-public class ArrayStack<T> implements StackInterface<T> {
+public class ArrayStack<T> implements StackInterface<T>, Serializable {
 
   private T[] array;
   private int topIndex; // index of top entry
@@ -18,6 +19,7 @@ public class ArrayStack<T> implements StackInterface<T> {
   public ArrayStack() {
     this(DEFAULT_CAPACITY);
   }
+
   public ArrayStack(int initialCapacity) {
     if (initialCapacity < 1) {
       throw new IllegalArgumentException("Initial capacity must be greater than 0");
@@ -26,6 +28,40 @@ public class ArrayStack<T> implements StackInterface<T> {
     array = (T[]) new Object[initialCapacity];
     topIndex = -1;
   }
+
+  @Override
+  public void push(T newEntry) {
+    if (newEntry == null) {
+      throw new IllegalArgumentException("Cannot add null elements to Stack.");
+    }
+
+    if (isFull()) {
+      doubleArray();
+    }
+    
+    topIndex++;
+    array[topIndex] = newEntry;
+  }
+
+  @Override
+  public T pop() {
+    if (isEmpty()) return null;
+    
+    T top = array[topIndex];
+    array[topIndex] = null;
+    topIndex--;
+    return top;
+  } 
+
+  @Override
+  public T peek() {
+    if (isEmpty()) return null;
+    
+    T top = array[topIndex];
+
+    return top;
+  } 
+
   @Override
   public boolean isEmpty(){
     return topIndex == -1;
@@ -40,34 +76,18 @@ public class ArrayStack<T> implements StackInterface<T> {
   }
 
   @Override
-  public void push(T newEntry) {
-    if (topIndex == array.length - 1) doubleArray();
-    
-    topIndex++;
-    array[topIndex] = newEntry;
-  }
-
-  @Override
-  public T peek() {
-    if (isEmpty()) return null;
-    
-    T top = array[topIndex];
-
-    return top;
-  } 
-  @Override
-  public T pop() {
-    if (isEmpty()) return null;
-    
-    T top = array[topIndex];
-    array[topIndex] = null;
-    topIndex--;
-    return top;
-  } 
-
-  @Override
   public void clear() {
     topIndex = -1; // O(1) time complexity
   } 
-  
+
+  @Override
+  public boolean isFull() {
+    return topIndex == array.length - 1;
+  }
+
+  @Override
+  public int size() {
+    return topIndex + 1;
+  }
+
 } 

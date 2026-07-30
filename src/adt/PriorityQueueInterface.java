@@ -45,10 +45,18 @@ public interface PriorityQueueInterface<T extends Comparable<? super T>> {
      * 
      * @return The number of elements currently in the queue.
      */
-    int getSize();
+    int size();
 
     /**
      * Removes all entries from this priority queue.
      */
     void clear();
+
+    /**
+     * Detects whether this priority queue is full.
+     * 
+     * @return True if the priority queue is full, or false otherwise.
+     */
+    boolean isFull();
+
 }

@@ -7,6 +7,7 @@ import java.util.Iterator;
  * method that returns an iterator to the queue.
  *
  * @author Frank M. Carrano
+ * @modified by: Chang Han Yean
  * @version 2.0
  * @param <T>
  */
@@ -48,4 +49,18 @@ public interface QueueInterface<T> {
    * Task: Removes all entries from the queue.
    */
   public void clear();
+
+  /**
+   * Task: Sees whether the queue is full.
+   *
+   * @return true if the queue is full, or false otherwise
+   */
+  public boolean isFull();
+
+  /**
+   * Task: Gets the number of entries in the queue.
+   *
+   * @return the integer number of entries in the queue
+   */
+  public int size();
 }
