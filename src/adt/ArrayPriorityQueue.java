@@ -42,9 +42,9 @@ public class ArrayPriorityQueue<T extends Comparable<? super T>>
       doubleArray();
     }
 
-    // Sorted in ascending order; highest priority sits at backIndex.
+    // Sorted in ascending order; highest priority sits at end of array.
     int insertIndex = numberOfEntries - 1;
-    while (insertIndex >= 0 && newEntry.compareTo(array[insertIndex]) < 0) {
+    while (insertIndex >= 0 && newEntry.compareTo(array[insertIndex]) <= 0) {
       array[insertIndex + 1] = array[insertIndex]; // shift right
       insertIndex--;
     }
