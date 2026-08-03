@@ -5,6 +5,7 @@ import adt.BinarySearchTree;
 import adt.BinarySearchTreeInterface;
 import adt.ListInterface;
 import entity.Guest;
+import entity.Room;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileReader;
@@ -23,6 +24,7 @@ import java.util.Iterator;
 
 public class FrontDeskService {
     private static final String DATA_FILE = "guests.txt";
+    private static final String ROOMS_FILE = "rooms.txt";
 
     private BinarySearchTreeInterface<Guest> guestTree;
 
@@ -125,6 +127,60 @@ public class FrontDeskService {
             list.add(it.next());
         }
         return list;
+    }
+
+    /**
+     * Returns rooms with cleanliness status Ready for check-in.
+     * Reads live data from rooms.txt (shared with Housekeeping module).
+     */
+    public ListInterface<Room> getAvailableRooms() {
+        ListInterface<Room> allRooms = loadRoomsFromFile();
+        ListInterface<Room> available = new ArrayList<>();
+
+        for (int i = 1; i <= allRooms.getNumberOfEntries(); i++) {
+            Room room = allRooms.getEntry(i);
+            if (room.getCleanlinessStatus().equalsIgnoreCase("Ready")) {
+                available.add(room);
+            }
+        }
+
+        insertionSortByRoomNumber(available);
+        return available;
+    }
+
+    private ListInterface<Room> loadRoomsFromFile() {
+        ListInterface<Room> rooms = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(ROOMS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.trim().isEmpty()) {
+                    continue;
+                }
+                String[] parts = line.split("\\|");
+                if (parts.length >= 6) {
+                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]));
+                } else if (parts.length == 4) {
+                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3]));
+                } else if (parts.length == 3) {
+                    rooms.add(new Room(parts[0], parts[1], parts[2], "N/A"));
+                }
+            }
+        } catch (IOException e) {
+            // If file doesn't exist, return empty list
+        }
+        return rooms;
+    }
+
+    private void insertionSortByRoomNumber(ListInterface<Room> list) {
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
+            Room key = list.getEntry(i);
+            int j = i - 1;
+            while (j >= 1 && list.getEntry(j).getRoomNumber().compareToIgnoreCase(key.getRoomNumber()) > 0) {
+                list.replace(j + 1, list.getEntry(j));
+                j--;
+            }
+            list.replace(j + 1, key);
+        }
     }
 
     // Filters by loyalty membership (member vs non-member), then sorts the

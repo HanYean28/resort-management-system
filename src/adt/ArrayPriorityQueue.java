@@ -4,7 +4,12 @@ import java.io.Serializable;
 
 /**
  * Array-based priority queue. Structure follows ArrayQueue, but entries are
- * stored in priority order (highest priority at backIndex) instead of FIFO.
+ * stored in priority order (highest priority at the removal end) instead of FIFO.
+ *
+ * <p>Ordering is determined entirely by {@code T.compareTo()}. When
+ * {@code compareTo} returns 0, the new entry is placed after existing equals
+ * (LIFO among ties). Clients needing FIFO or other tie rules should add a
+ * secondary comparison inside {@code T.compareTo()} (e.g. arrival timestamp).
  *
  * Referenced from: adt.ArrayQueue
  *
@@ -42,9 +47,9 @@ public class ArrayPriorityQueue<T extends Comparable<? super T>>
       doubleArray();
     }
 
-    // Sorted in ascending order; highest priority sits at end of array.
+    // Ascending by compareTo; highest priority at removal end.
     int insertIndex = numberOfEntries - 1;
-    while (insertIndex >= 0 && newEntry.compareTo(array[insertIndex]) <= 0) {
+    while (insertIndex >= 0 && newEntry.compareTo(array[insertIndex]) < 0) {
       array[insertIndex + 1] = array[insertIndex]; // shift right
       insertIndex--;
     }

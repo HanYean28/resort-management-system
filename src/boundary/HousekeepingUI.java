@@ -28,7 +28,7 @@ public class HousekeepingUI {
             UIUtils.printHeader("HOUSEKEEPING AND TASK LOG MENU");
             System.out.println(" [1] View All Rooms Status");
             System.out.println(" [2] Update Room Cleanliness Status");
-            System.out.println(" [3] Rollback Last Status Update (Undo)");
+            System.out.println(" [3] Rollback Last Status Update for a Room (Undo)");
             System.out.println(" [4] Generate Report 1: Shift Turnover Performance");
             System.out.println(" [5] Generate Report 2: Audit Trail & Activity Search");
             System.out.println(" [0] Return to Main Menu");
@@ -556,21 +556,51 @@ public class HousekeepingUI {
     }
 
     private void handleRollback() {
-        UIUtils.clearScreen();
-        UIUtils.printHeader("ROLLBACK LAST STATUS UPDATE");
+        String roomNum = null;
+        Room room = null;
+        String lastError = null;
 
-        HousekeepingLog lastAction = manager.peekLastRollbackAction();
+        while (room == null) {
+            UIUtils.clearScreen();
+            UIUtils.printHeader("ROLLBACK LAST STATUS UPDATE");
+            if (lastError != null) {
+                UIUtils.printError(lastError);
+                System.out.println();
+            }
+            System.out.print("Enter Room Number to undo (or 0 to cancel): ");
+            roomNum = scanner.nextLine().trim();
+
+            if (roomNum.equals("0")) {
+                System.out.println("\nRollback cancelled. Returning to menu.");
+                return;
+            }
+
+            if (roomNum.isEmpty()) {
+                lastError = "Room number cannot be empty.";
+                continue;
+            }
+
+            room = manager.getRoom(roomNum);
+            if (room == null) {
+                lastError = "Room '" + roomNum + "' not found. Please try again.";
+            }
+        }
+
+        HousekeepingLog lastAction = manager.peekLastRollbackAction(roomNum);
         if (lastAction == null) {
-            System.out.println("\nNo status changes found in the history log stack.");
+            UIUtils.clearScreen();
+            UIUtils.printHeader("ROLLBACK LAST STATUS UPDATE — ROOM " + roomNum);
+            System.out.println("\nNo status changes found for this room in the current session.");
+            System.out.println("Undo history is kept in memory only and clears when the program restarts.");
             return;
         }
 
-        Room room = lastAction.getRoom();
-        String roomType = room != null ? room.getRoomType() : "Unknown";
+        String roomType = room.getRoomType();
+        int undoStepsRemaining = manager.getRollbackStackSize(roomNum);
 
         while (true) {
             UIUtils.clearScreen();
-            UIUtils.printHeader("ROLLBACK LAST STATUS UPDATE");
+            UIUtils.printHeader("ROLLBACK LAST STATUS UPDATE — ROOM " + roomNum);
 
             System.out.println("\n [PENDING UNDO PREVIEW]");
             System.out.println(" Timestamp   : " + lastAction.getTimestamp());
@@ -578,6 +608,7 @@ public class HousekeepingUI {
             System.out.println(" Action      : '" + lastAction.getOldStatus() + "' --> '"
                     + lastAction.getNewStatus() + "'");
             System.out.println(" Restoration : Room will return to '" + lastAction.getOldStatus() + "'");
+            System.out.println(" Undo Steps  : " + undoStepsRemaining + " remaining for this room in this session");
             UIUtils.printSectionLine();
             System.out.print("Confirm execution? (Y/N): ");
 
@@ -593,7 +624,7 @@ public class HousekeepingUI {
             }
 
             System.out.println("\nExecuting rollback...");
-            HousekeepingLog log = manager.rollbackLastAction();
+            HousekeepingLog log = manager.rollbackLastAction(roomNum);
             if (log != null) {
                 System.out.println("ROLLBACK SUCCESSFUL!");
                 printRollbackDisruptionNotice(log, roomType);

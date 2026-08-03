@@ -71,13 +71,13 @@ public class HousekeepingController {
     private ListInterface<Room> rooms;
     private ListInterface<HousekeepingTurnoverLog> turnoverLogs;
     private ListInterface<HousekeepingLog> auditLogs;
-    private StackInterface<HousekeepingLog> rollbackStack;
+    private ListInterface<RoomRollbackEntry> roomRollbackStacks;
 
     public HousekeepingController() {
         rooms = new ArrayList<>();
         turnoverLogs = new ArrayList<>();
         auditLogs = new ArrayList<>();
-        rollbackStack = new ArrayStack<>();
+        roomRollbackStacks = new ArrayList<>();
         loadRoomsFromFile();
         loadTurnoverLogsFromFile();
         loadAuditLogsFromFile();
@@ -136,9 +136,18 @@ public class HousekeepingController {
                 if (parts.length >= 6) {
                     Room room = getRoom(parts[0]);
                     if (room != null) {
+                        String recordStatus = HousekeepingTurnoverLog.STATUS_COMPLETED;
+                        String cancellationTimestamp = "N/A";
+                        if (parts.length >= 7) {
+                            recordStatus = parts[6];
+                        }
+                        if (parts.length >= 8) {
+                            cancellationTimestamp = parts[7];
+                        }
                         turnoverLogs.add(new HousekeepingTurnoverLog(
                                 room, parts[2], parts[3],
-                                Double.parseDouble(parts[4]), parts[5]));
+                                Double.parseDouble(parts[4]), parts[5],
+                                recordStatus, cancellationTimestamp));
                     }
                 }
             }
@@ -150,13 +159,26 @@ public class HousekeepingController {
     private void appendTurnoverLog(HousekeepingTurnoverLog log) {
         turnoverLogs.add(log);
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(TURNOVER_LOG_FILE, true))) {
-            bw.write(log.getRoom().getRoomNumber() + "|" + log.getRoom().getRoomType() + "|" + log.getDirtyTimestamp()
-                    + "|" + log.getReadyTimestamp() + "|" + String.format("%.1f", log.getTurnaroundMinutes())
-                    + "|" + log.getShiftLabel());
+            bw.write(formatTurnoverLogLine(log));
             bw.newLine();
         } catch (IOException e) {
             // Handle logging or exception propagation
         }
+    }
+
+    private String formatTurnoverLogLine(HousekeepingTurnoverLog log) {
+        StringBuilder line = new StringBuilder();
+        line.append(log.getRoom().getRoomNumber()).append("|")
+                .append(log.getRoom().getRoomType()).append("|")
+                .append(log.getDirtyTimestamp()).append("|")
+                .append(log.getReadyTimestamp()).append("|")
+                .append(String.format("%.1f", log.getTurnaroundMinutes())).append("|")
+                .append(log.getShiftLabel()).append("|")
+                .append(log.getRecordStatus());
+        if (HousekeepingTurnoverLog.STATUS_CANCELLED.equals(log.getRecordStatus())) {
+            line.append("|").append(log.getCancellationTimestamp());
+        }
+        return line.toString();
     }
 
     /**
@@ -191,29 +213,29 @@ public class HousekeepingController {
             return "Room not found.";
         }
 
-        String currentStatus = room.getCleanlinessStatus();
-        if (currentStatus.equalsIgnoreCase(targetStatus)) {
-            return "Room is already '" + currentStatus + "'. No update needed.";
+        String sequentialError = validateStrictSequentialUpdate(
+                room.getCleanlinessStatus(), targetStatus);
+        if (sequentialError != null) {
+            return sequentialError;
         }
 
-        if (!isValidTransition(currentStatus, targetStatus)) {
-            return "Invalid transition from '" + currentStatus + "' to '" + targetStatus + "'. "
-                    + "Allowed next status: " + getAllowedNextStatuses(currentStatus) + ".";
-        }
+        String canonicalCurrent = resolveCanonicalStatus(room.getCleanlinessStatus());
+        String canonicalTarget = resolveCanonicalStatus(targetStatus);
 
         String timestamp = getCurrentTimestamp();
-        room.setCleanlinessStatus(targetStatus);
+        room.setCleanlinessStatus(canonicalTarget);
         room.setLastUpdate(timestamp);
 
-        if (targetStatus.equals("Dirty")) {
+        if (canonicalTarget.equals(STATUS_PHASES[0])) {
             room.setDirtySince(timestamp);
             room.setLastTurnaroundMinutes("N/A");
-        } else if (targetStatus.equals("Ready") && currentStatus.equals("Inspected")) {
+        } else if (canonicalTarget.equals(STATUS_PHASES[STATUS_PHASES.length - 1])
+                && canonicalCurrent.equals(STATUS_PHASES[STATUS_PHASES.length - 2])) {
             recordTurnoverCompletion(room, timestamp);
         }
 
-        HousekeepingLog log = new HousekeepingLog(room, currentStatus, targetStatus, timestamp);
-        rollbackStack.push(log);
+        HousekeepingLog log = new HousekeepingLog(room, canonicalCurrent, canonicalTarget, timestamp);
+        pushRollbackLog(roomNumber, log);
         appendAuditLog(log);
         saveRoomsToFile();
         return null;
@@ -655,6 +677,12 @@ public class HousekeepingController {
 
         for (int i = 1; i <= turnoverLogs.getNumberOfEntries(); i++) {
             HousekeepingTurnoverLog log = turnoverLogs.getEntry(i);
+            if (HousekeepingTurnoverLog.STATUS_CANCELLED.equals(log.getRecordStatus())) {
+                continue;
+            }
+            if (isTurnoverCancelled(log)) {
+                continue;
+            }
             if (!roomTypeFilter.equals(FILTER_ALL)
                     && !log.getRoom().getRoomType().equalsIgnoreCase(roomTypeFilter)) {
                 continue;
@@ -864,29 +892,58 @@ public class HousekeepingController {
     }
 
     /**
-     * Returns the last status change on the rollback stack without undoing it.
+     * Returns the last status change on the room's rollback stack without undoing it.
      */
-    public HousekeepingLog peekLastRollbackAction() {
-        if (rollbackStack.isEmpty()) {
+    public HousekeepingLog peekLastRollbackAction(String roomNumber) {
+        if (getRoom(roomNumber) == null) {
             return null;
         }
-        return rollbackStack.peek();
+        RoomRollbackEntry entry = findRollbackEntry(roomNumber);
+        if (entry == null || entry.getStack().isEmpty()) {
+            return null;
+        }
+        return entry.getStack().peek();
     }
 
     /**
-     * Undoes the last housekeeping status change.
+     * Returns how many undo steps remain for the room in this session.
      */
-    public HousekeepingLog rollbackLastAction() {
-        if (rollbackStack.isEmpty()) {
+    public int getRollbackStackSize(String roomNumber) {
+        RoomRollbackEntry entry = findRollbackEntry(roomNumber);
+        if (entry == null) {
+            return 0;
+        }
+        return entry.getStack().size();
+    }
+
+    /**
+     * Undoes the last housekeeping status change for the given room.
+     */
+    public HousekeepingLog rollbackLastAction(String roomNumber) {
+        if (getRoom(roomNumber) == null) {
+            return null;
+        }
+        RoomRollbackEntry entry = findRollbackEntry(roomNumber);
+        if (entry == null || entry.getStack().isEmpty()) {
             return null;
         }
 
-        HousekeepingLog lastLog = rollbackStack.pop();
+        HousekeepingLog lastLog = entry.getStack().pop();
         Room room = lastLog.getRoom();
         if (room != null) {
             String timestamp = getCurrentTimestamp();
             room.setCleanlinessStatus(lastLog.getOldStatus());
             room.setLastUpdate(timestamp);
+
+            String oldStatus = resolveCanonicalStatus(lastLog.getOldStatus());
+            String newStatus = resolveCanonicalStatus(lastLog.getNewStatus());
+            if (oldStatus != null && newStatus != null
+                    && oldStatus.equals(STATUS_PHASES[STATUS_PHASES.length - 2])
+                    && newStatus.equals(STATUS_PHASES[STATUS_PHASES.length - 1])) {
+                room.setLastTurnaroundMinutes("N/A");
+                appendTurnoverCancellation(room, lastLog, timestamp);
+            }
+
             appendAuditLog(new HousekeepingLog(room, lastLog.getNewStatus(), lastLog.getOldStatus(), timestamp));
             saveRoomsToFile();
             return lastLog;
@@ -895,64 +952,168 @@ public class HousekeepingController {
         return null;
     }
 
-    /**
-     * Checks if the transition between two room statuses is valid.
-     */
-    private boolean isValidTransition(String current, String target) {
-        if (current.equals("Dirty") && target.equals("Cleaning In Progress")) {
-            return true;
+    private RoomRollbackEntry findRollbackEntry(String roomNumber) {
+        for (int i = 1; i <= roomRollbackStacks.getNumberOfEntries(); i++) {
+            RoomRollbackEntry entry = roomRollbackStacks.getEntry(i);
+            if (entry.getRoomNumber().equalsIgnoreCase(roomNumber)) {
+                return entry;
+            }
         }
-        if (current.equals("Cleaning In Progress") && target.equals("Inspected")) {
-            return true;
+        return null;
+    }
+
+    private RoomRollbackEntry getOrCreateRollbackEntry(String roomNumber) {
+        RoomRollbackEntry entry = findRollbackEntry(roomNumber);
+        if (entry != null) {
+            return entry;
         }
-        if (current.equals("Inspected") && target.equals("Ready")) {
-            return true;
+        entry = new RoomRollbackEntry(roomNumber);
+        roomRollbackStacks.add(entry);
+        return entry;
+    }
+
+    private void pushRollbackLog(String roomNumber, HousekeepingLog log) {
+        getOrCreateRollbackEntry(roomNumber).getStack().push(log);
+    }
+
+    private void appendTurnoverCancellation(Room room, HousekeepingLog undoneLog, String cancelTimestamp) {
+        HousekeepingTurnoverLog completedLog = findMatchingCompletedTurnover(
+                room.getRoomNumber(), undoneLog.getTimestamp());
+        if (completedLog == null) {
+            return;
         }
-        if (current.equals("Ready") && target.equals("Dirty")) {
-            return true;
+
+        HousekeepingTurnoverLog cancellationLog = new HousekeepingTurnoverLog(
+                room,
+                completedLog.getDirtyTimestamp(),
+                completedLog.getReadyTimestamp(),
+                completedLog.getTurnaroundMinutes(),
+                completedLog.getShiftLabel(),
+                HousekeepingTurnoverLog.STATUS_CANCELLED,
+                cancelTimestamp);
+        appendTurnoverLog(cancellationLog);
+    }
+
+    private HousekeepingTurnoverLog findMatchingCompletedTurnover(String roomNumber, String readyTimestamp) {
+        HousekeepingTurnoverLog match = null;
+        for (int i = 1; i <= turnoverLogs.getNumberOfEntries(); i++) {
+            HousekeepingTurnoverLog log = turnoverLogs.getEntry(i);
+            if (!log.getRoom().getRoomNumber().equalsIgnoreCase(roomNumber)) {
+                continue;
+            }
+            if (!HousekeepingTurnoverLog.STATUS_COMPLETED.equals(log.getRecordStatus())) {
+                continue;
+            }
+            if (log.getReadyTimestamp().equals(readyTimestamp)) {
+                match = log;
+            }
         }
-        if (current.equals("Cleaning In Progress") && target.equals("Dirty")) {
-            return true;
-        }
-        if (current.equals("Inspected") && target.equals("Dirty")) {
-            return true;
+        return match;
+    }
+
+    private boolean isTurnoverCancelled(HousekeepingTurnoverLog completedLog) {
+        String roomNumber = completedLog.getRoom().getRoomNumber();
+        String readyTimestamp = completedLog.getReadyTimestamp();
+        for (int i = 1; i <= turnoverLogs.getNumberOfEntries(); i++) {
+            HousekeepingTurnoverLog log = turnoverLogs.getEntry(i);
+            if (!HousekeepingTurnoverLog.STATUS_CANCELLED.equals(log.getRecordStatus())) {
+                continue;
+            }
+            if (log.getRoom().getRoomNumber().equalsIgnoreCase(roomNumber)
+                    && log.getReadyTimestamp().equals(readyTimestamp)) {
+                return true;
+            }
         }
         return false;
     }
 
+    private String validateStrictSequentialUpdate(String currentStatus, String targetStatus) {
+        String canonicalCurrent = resolveCanonicalStatus(currentStatus);
+        String canonicalTarget = resolveCanonicalStatus(targetStatus);
+
+        if (canonicalCurrent == null) {
+            return "Unknown current status '" + currentStatus + "'.";
+        }
+        if (canonicalTarget == null) {
+            return "Unknown target status '" + targetStatus + "'.";
+        }
+        if (canonicalCurrent.equals(canonicalTarget)) {
+            return "Room is already '" + canonicalCurrent + "'. No update needed.";
+        }
+        if (!isStrictSequentialTransition(canonicalCurrent, canonicalTarget)) {
+            return "Invalid transition from '" + canonicalCurrent + "' to '" + canonicalTarget + "'. "
+                    + "Updates must follow: Dirty -> Cleaning In Progress -> Inspected -> Ready. "
+                    + "To reverse a step, use Undo for that room.";
+        }
+        return null;
+    }
+
+    private boolean isCheckoutTransition(String current, String target) {
+        return current.equals(STATUS_PHASES[STATUS_PHASES.length - 1])
+                && target.equals(STATUS_PHASES[0]);
+    }
+
+    private boolean isStrictSequentialTransition(String current, String target) {
+        int currentIdx = getStatusPhaseIndex(current);
+        int targetIdx = getStatusPhaseIndex(target);
+        if (currentIdx < 0 || targetIdx < 0) {
+            return false;
+        }
+        if (targetIdx == currentIdx + 1) {
+            return true;
+        }
+        return isCheckoutTransition(current, target);
+    }
+
+    private int getStatusPhaseIndex(String status) {
+        String canonical = resolveCanonicalStatus(status);
+        if (canonical == null) {
+            return -1;
+        }
+        for (int i = 0; i < STATUS_PHASES.length; i++) {
+            if (STATUS_PHASES[i].equals(canonical)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private String resolveCanonicalStatus(String status) {
+        if (status == null) {
+            return null;
+        }
+        for (int i = 0; i < STATUS_PHASES.length; i++) {
+            if (STATUS_PHASES[i].equalsIgnoreCase(status.trim())) {
+                return STATUS_PHASES[i];
+            }
+        }
+        return null;
+    }
+
     private String getAllowedNextStatuses(String current) {
-        if (current.equals("Dirty")) {
-            return "Cleaning In Progress";
+        String[] allowed = getAllowedTargetStatuses(current);
+        if (allowed.length == 0) {
+            return "none (unknown status)";
         }
-        if (current.equals("Cleaning In Progress")) {
-            return "Inspected or Dirty";
-        }
-        if (current.equals("Inspected")) {
-            return "Ready or Dirty";
-        }
-        if (current.equals("Ready")) {
-            return "Dirty";
-        }
-        return "unknown";
+        return allowed[0];
     }
 
     /**
-     * Returns the valid target statuses for the given current status.
+     * Returns the valid target statuses for the given current status (strict sequential).
      */
     public String[] getAllowedTargetStatuses(String currentStatus) {
-        if (currentStatus.equals("Dirty")) {
-            return new String[] { "Cleaning In Progress" };
+        String canonical = resolveCanonicalStatus(currentStatus);
+        if (canonical == null) {
+            return new String[0];
         }
-        if (currentStatus.equals("Cleaning In Progress")) {
-            return new String[] { "Inspected", "Dirty" };
+        int idx = getStatusPhaseIndex(canonical);
+        if (idx < 0) {
+            return new String[0];
         }
-        if (currentStatus.equals("Inspected")) {
-            return new String[] { "Ready", "Dirty" };
+        if (idx < STATUS_PHASES.length - 1) {
+            return new String[] { STATUS_PHASES[idx + 1] };
         }
-        if (currentStatus.equals("Ready")) {
-            return new String[] { "Dirty" };
-        }
-        return new String[0];
+        return new String[] { STATUS_PHASES[0] };
     }
 
     /**
@@ -1374,5 +1535,23 @@ public class HousekeepingController {
 
     private String getCurrentTimestamp() {
         return LocalDateTime.now().format(TIMESTAMP_FORMAT);
+    }
+
+    private static class RoomRollbackEntry {
+        private final String roomNumber;
+        private final StackInterface<HousekeepingLog> stack;
+
+        private RoomRollbackEntry(String roomNumber) {
+            this.roomNumber = roomNumber;
+            this.stack = new ArrayStack<>();
+        }
+
+        private String getRoomNumber() {
+            return roomNumber;
+        }
+
+        private StackInterface<HousekeepingLog> getStack() {
+            return stack;
+        }
     }
 }

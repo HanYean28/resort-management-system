@@ -3,6 +3,7 @@ package boundary;
 import adt.ListInterface;
 import control.FrontDeskService;
 import entity.Guest;
+import entity.Room;
 
 import java.util.Scanner;
 
@@ -29,9 +30,10 @@ public class FrontDeskUI {
             System.out.println(" [4] Remove Guest Record");
             System.out.println(" [5] Generate Report 1: Guest Directory Report");
             System.out.println(" [6] Generate Report 2: Outstanding Billing Report");
+            System.out.println(" [7] View Available Rooms (Ready for Check-In)");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-6): ");
+            System.out.print("Please enter choice (0-7): ");
 
             if (scanner.hasNextInt()) {
                 choice = scanner.nextInt();
@@ -61,6 +63,9 @@ public class FrontDeskUI {
                     break;
                 case 6:
                     handleBillingReport();
+                    break;
+                case 7:
+                    displayAvailableRooms();
                     break;
                 case 0:
                     UIUtils.clearScreen();
@@ -155,6 +160,28 @@ public class FrontDeskUI {
         System.out.println();
         UIUtils.printHeader(membersOnly ? "LOYALTY MEMBERS (sorted by Name)" : "NON-MEMBERS (sorted by Name)");
         printGuestTable(report);
+    }
+
+    private void displayAvailableRooms() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("AVAILABLE ROOMS (READY FOR CHECK-IN)");
+
+        ListInterface<Room> rooms = service.getAvailableRooms();
+        if (rooms.isEmpty()) {
+            System.out.println("No rooms are currently ready for check-in.");
+            return;
+        }
+
+        System.out.printf("%-14s | %-15s | %-22s%n",
+                "Room Number", "Room Type", "Status");
+        UIUtils.printSectionLine();
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            Room r = rooms.getEntry(i);
+            System.out.printf("%-14s | %-15s | %-22s%n",
+                    r.getRoomNumber(), r.getRoomType(), r.getCleanlinessStatus());
+        }
+        UIUtils.printSectionLine();
+        System.out.println("Total Available: " + rooms.getNumberOfEntries());
     }
 
     private void handleBillingReport() {
