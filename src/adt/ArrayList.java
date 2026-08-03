@@ -58,19 +58,21 @@ public class ArrayList<T> implements ListInterface<T>, Serializable {
     // position is 1-based, so 1 is the first position and in array is at index 0
     @Override
     public boolean add(int newPosition, T newEntry) {
-        if (newPosition >=1 && newPosition <= numberOfEntries + 1){
-            if(isFull()) {
-                doubleArray();
-            }
-            for (int index = numberOfEntries; index >= newPosition; index--){
-                array[index] = array[index - 1];
-            }
-            array[newPosition - 1] = newEntry;
-            numberOfEntries++;
-            return true;
-
+        if (newEntry == null) {
+            throw new IllegalArgumentException("Cannot add null elements to ArrayList.");
+        }   
+        if (newPosition < 1 || newPosition > numberOfEntries + 1) {
+            throw new IndexOutOfBoundsException("Invalid position to add element.");
         }
-        return false;
+        if (isFull()) {
+            doubleArray();
+        }
+        for (int index = numberOfEntries; index >= newPosition; index--) {
+            array[index] = array[index - 1];
+        }
+        array[newPosition - 1] = newEntry;
+        numberOfEntries++;
+        return true;
     }
 
     @Override
@@ -96,12 +98,14 @@ public class ArrayList<T> implements ListInterface<T>, Serializable {
 
     @Override
     public boolean replace(int givenPosition, T newEntry) {
-
-        if ((givenPosition >= 1) && (givenPosition <= numberOfEntries)) {
-            array[givenPosition - 1] = newEntry;
-            return true;
+        if (newEntry == null) {
+            throw new IllegalArgumentException("Cannot add null elements to ArrayList.");
         }
-        return false;
+        if (givenPosition < 1 || givenPosition > numberOfEntries) {
+            throw new IndexOutOfBoundsException("Invalid position to replace element.");
+        }
+        array[givenPosition - 1] = newEntry;
+        return true;
     }
 
     @Override
