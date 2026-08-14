@@ -4,7 +4,6 @@ import adt.ListInterface;
 import control.FrontDeskService;
 import entity.Guest;
 import entity.Room;
-
 import java.util.Scanner;
 
 /**
@@ -25,15 +24,14 @@ public class FrontDeskUI {
             UIUtils.clearScreen();
             UIUtils.printHeader("FRONT-DESK SERVICE MENU");
             System.out.println(" [1] View All Guests (sorted by Confirmation No.)");
-            System.out.println(" [2] Register New Guest Record");
-            System.out.println(" [3] Search Guest by Confirmation Number");
-            System.out.println(" [4] Remove Guest Record");
-            System.out.println(" [5] Generate Report 1: Guest Directory Report");
-            System.out.println(" [6] Generate Report 2: Outstanding Billing Report");
-            System.out.println(" [7] View Available Rooms (Ready for Check-In)");
+            System.out.println(" [2] Search Guest by Confirmation Number");
+            System.out.println(" [3] Remove Guest Record");
+            System.out.println(" [4] Generate Report 1: Guest Directory Report");
+            System.out.println(" [5] Generate Report 2: Outstanding Billing Report");
+            System.out.println(" [6] View Available Rooms (Ready for Check-In)");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-7): ");
+            System.out.print("Please enter choice (0-6): ");
 
             if (scanner.hasNextInt()) {
                 choice = scanner.nextInt();
@@ -50,21 +48,18 @@ public class FrontDeskUI {
                     displayAllGuests();
                     break;
                 case 2:
-                    handleRegisterGuest();
-                    break;
-                case 3:
                     handleSearchGuest();
                     break;
-                case 4:
+                case 3:
                     handleRemoveGuest();
                     break;
-                case 5:
+                case 4:
                     handleGuestDirectoryReport();
                     break;
-                case 6:
+                case 5:
                     handleBillingReport();
                     break;
-                case 7:
+                case 6:
                     displayAvailableRooms();
                     break;
                 case 0:
@@ -89,40 +84,13 @@ public class FrontDeskUI {
         printGuestTable(guests);
     }
 
-    private void handleRegisterGuest() {
-        UIUtils.clearScreen();
-        UIUtils.printHeader("REGISTER NEW GUEST RECORD");
-
-        System.out.print("Confirmation No (8-digit): ");
-        String confirmationNo = scanner.nextLine().trim();
-
-        if (service.confirmationNumberExists(confirmationNo)) {
-            System.out.println("\nA record with this confirmation number already exists.");
-            return;
-        }
-
-        System.out.print("Guest Name: ");
-        String name = scanner.nextLine().trim();
-        System.out.print("Phone Number: ");
-        String phone = scanner.nextLine().trim();
-        System.out.print("Loyalty Tier (Platinum/Diamond/Elite/NONE): ");
-        String tier = scanner.nextLine().trim();
-        if (tier.isEmpty()) tier = "NONE";
-        System.out.print("Billing Amount (RM): ");
-        double billing = readDouble();
-        System.out.print("Room Number: ");
-        String roomNo = scanner.nextLine().trim();
-
-        service.addGuest(new Guest(confirmationNo, name, phone, tier, billing, roomNo));
-        System.out.println("\nGuest record registered successfully.");
-    }
-
     private void handleSearchGuest() {
         UIUtils.clearScreen();
         UIUtils.printHeader("SEARCH GUEST BY CONFIRMATION NUMBER");
 
         System.out.print("Enter Confirmation No: ");
         String confirmationNo = scanner.nextLine().trim();
+        warnIfNotEightDigits(confirmationNo);
 
         Guest result = service.searchByConfirmationNumber(confirmationNo);
         if (result == null) {
@@ -139,12 +107,25 @@ public class FrontDeskUI {
 
         System.out.print("Enter Confirmation No to remove: ");
         String confirmationNo = scanner.nextLine().trim();
+        warnIfNotEightDigits(confirmationNo);
 
         Guest removed = service.removeGuest(confirmationNo);
         if (removed == null) {
             System.out.println("\nNo guest record found for confirmation number " + confirmationNo + ".");
         } else {
             System.out.println("\nRemoved record for: " + removed.getName());
+        }
+    }
+
+    /**
+     * Soft (non-blocking) format check: confirmation numbers are 8 digits
+     * per spec. Prints a heads-up if the input doesn't match, but still lets
+     * the search/remove proceed normally either way.
+     */
+    private void warnIfNotEightDigits(String confirmationNo) {
+        if (!confirmationNo.matches("\\d{8}")) {
+            System.out.println("[Notice] Confirmation numbers are usually 8 digits — "
+                    + "double-check the number if you don't get a match.");
         }
     }
 
@@ -156,9 +137,16 @@ public class FrontDeskUI {
         int filterChoice = readIntOption(1, 2);
         boolean membersOnly = (filterChoice == 1);
 
-        ListInterface<Guest> report = service.generateGuestDirectoryReport(membersOnly);
+        System.out.print("Filter by Room Type (Standard/Deluxe/Suite), or press Enter for ALL: ");
+        String roomTypeFilter = scanner.nextLine().trim();
+        if (roomTypeFilter.isEmpty()) roomTypeFilter = "ALL";
+
+        ListInterface<Guest> report = service.generateGuestDirectoryReport(membersOnly, roomTypeFilter);
         System.out.println();
-        UIUtils.printHeader(membersOnly ? "LOYALTY MEMBERS (sorted by Name)" : "NON-MEMBERS (sorted by Name)");
+        String title = (membersOnly ? "LOYALTY MEMBERS" : "NON-MEMBERS")
+                + (roomTypeFilter.equalsIgnoreCase("ALL") ? "" : " - Room Type: " + roomTypeFilter)
+                + " (sorted by Name)";
+        UIUtils.printHeader(title);
         printGuestTable(report);
     }
 
@@ -191,9 +179,16 @@ public class FrontDeskUI {
         System.out.print("Minimum outstanding balance (RM): ");
         double minBalance = readDouble();
 
-        ListInterface<Guest> report = service.generateOutstandingBillingReport(minBalance);
+        System.out.print("Filter by Loyalty Tier (Platinum/Diamond/Elite/NONE), or press Enter for ALL: ");
+        String tierFilter = scanner.nextLine().trim();
+        if (tierFilter.isEmpty()) tierFilter = "ALL";
+
+        ListInterface<Guest> report = service.generateOutstandingBillingReport(minBalance, tierFilter);
         System.out.println();
-        UIUtils.printHeader("BILLING >= RM " + minBalance + " (highest first)");
+        String title = "BILLING >= RM " + minBalance
+                + (tierFilter.equalsIgnoreCase("ALL") ? "" : " - Tier: " + tierFilter)
+                + " (highest first)";
+        UIUtils.printHeader(title);
         printGuestTable(report);
     }
 
@@ -203,13 +198,14 @@ public class FrontDeskUI {
             return;
         }
 
-        System.out.printf("%-14s | %-18s | %-8s | %-10s | %10s%n",
-                "Confirmation No", "Name", "Tier", "Room No", "Billing (RM)");
+        System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s | %10s%n",
+                "Confirmation No", "Name", "Tier", "Room No", "Room Type", "Billing (RM)");
         UIUtils.printSectionLine();
         for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
             Guest g = guests.getEntry(i);
-            System.out.printf("%-14s | %-18s | %-8s | %-10s | %10.2f%n",
-                    g.getConfirmationNo(), g.getName(), g.getLoyaltyTier(), g.getRoomNo(), g.getBillingAmount());
+            System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s | %10.2f%n",
+                    g.getConfirmationNo(), g.getName(), g.getLoyaltyTier(), g.getRoomNo(),
+                    service.getRoomType(g.getRoomNo()), g.getBillingAmount());
         }
         UIUtils.printSectionLine();
         System.out.println("Total Records: " + guests.getNumberOfEntries());
@@ -221,6 +217,7 @@ public class FrontDeskUI {
         System.out.println("Phone Number    : " + g.getPhone());
         System.out.println("Loyalty Tier    : " + g.getLoyaltyTier());
         System.out.println("Room Number     : " + g.getRoomNo());
+        System.out.println("Room Type       : " + service.getRoomType(g.getRoomNo()));
         System.out.printf("Billing Amount  : RM %.2f%n", g.getBillingAmount());
         UIUtils.printSectionLine();
     }

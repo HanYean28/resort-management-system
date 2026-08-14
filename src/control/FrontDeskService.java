@@ -55,13 +55,14 @@ public class FrontDeskService {
         }
     }
 
-    /** Hardcoded sample data so this module can be demonstrated/tested standalone. */
+    /** Hardcoded sample data so this module can be demonstrated/tested standalone.
+     *  Room numbers here match the real Housekeeping rooms.txt (101-108). */
     private void loadSampleData() {
         guestTree.add(new Guest("20260701", "Tan Wei Ling", "012-3456789", "NONE", 0.00, "101"));
-        guestTree.add(new Guest("20260702", "Nurul Aisyah", "013-2345678", "Diamond", 150.50, "205"));
-        guestTree.add(new Guest("20260703", "Rajesh Kumar", "016-7891234", "Platinum", 0.00, "310"));
+        guestTree.add(new Guest("20260702", "Nurul Aisyah", "013-2345678", "Diamond", 150.50, "104"));
+        guestTree.add(new Guest("20260703", "Rajesh Kumar", "016-7891234", "Platinum", 0.00, "105"));
         guestTree.add(new Guest("20260704", "Chong Mei Yee", "011-9988776", "NONE", 45.00, "102"));
-        guestTree.add(new Guest("20260705", "Ahmad Faiz", "019-2233445", "Elite", 320.00, "208"));
+        guestTree.add(new Guest("20260705", "Ahmad Faiz", "019-2233445", "Elite", 320.00, "107"));
     }
 
     /** Saves all current guest records back to guests.txt (in confirmationNo order). */
@@ -183,18 +184,36 @@ public class FrontDeskService {
         }
     }
 
-    // Filters by loyalty membership (member vs non-member), then sorts the
-    // filtered results alphabetically by guest name (insertion sort).
+    /** Looks up a room's type by room number (linear search through rooms.txt). Returns "N/A" if not found. */
+    public String getRoomType(String roomNo) {
+        ListInterface<Room> allRooms = loadRoomsFromFile();
+        for (int i = 1; i <= allRooms.getNumberOfEntries(); i++) {
+            Room r = allRooms.getEntry(i);
+            if (r.getRoomNumber().equalsIgnoreCase(roomNo)) {
+                return r.getRoomType();
+            }
+        }
+        return "N/A";
+    }
 
-    public ListInterface<Guest> generateGuestDirectoryReport(boolean membersOnly) {
+    // Filters by TWO criteria: (1) loyalty membership (member vs non-member)
+    // AND (2) room type (pass "ALL" to skip this second filter), then sorts
+    // the filtered results alphabetically by guest name (insertion sort).
+
+    public ListInterface<Guest> generateGuestDirectoryReport(boolean membersOnly, String roomTypeFilter) {
         ListInterface<Guest> allGuests = getAllGuestsSorted();
         ListInterface<Guest> filtered = new ArrayList<>();
+        boolean filterByRoomType = roomTypeFilter != null && !roomTypeFilter.equalsIgnoreCase("ALL");
 
-        // Linear search through every record, filtering on loyalty membership
+        // Linear search through every record, filtering on BOTH criteria at once
         for (int i = 1; i <= allGuests.getNumberOfEntries(); i++) {
             Guest g = allGuests.getEntry(i);
             boolean isMember = g.getLoyaltyTier() != null && !g.getLoyaltyTier().equalsIgnoreCase("NONE");
-            if (isMember == membersOnly) {
+            boolean matchesMembership = (isMember == membersOnly);
+            boolean matchesRoomType = !filterByRoomType
+                    || getRoomType(g.getRoomNo()).equalsIgnoreCase(roomTypeFilter);
+
+            if (matchesMembership && matchesRoomType) {
                 filtered.add(g);
             }
         }
@@ -216,16 +235,22 @@ public class FrontDeskService {
         }
     }
 
-    // Filters guests whose billing amount >= minBalance, then quicksorts the
+    // Filters by TWO criteria: (1) billing amount >= minBalance AND (2) loyalty
+    // tier (pass "ALL" to skip this second filter), then quicksorts the
     // filtered results by billing amount, descending (highest debt first).
 
-    public ListInterface<Guest> generateOutstandingBillingReport(double minBalance) {
+    public ListInterface<Guest> generateOutstandingBillingReport(double minBalance, String loyaltyTierFilter) {
         ListInterface<Guest> allGuests = getAllGuestsSorted();
         ListInterface<Guest> filtered = new ArrayList<>();
+        boolean filterByTier = loyaltyTierFilter != null && !loyaltyTierFilter.equalsIgnoreCase("ALL");
 
         for (int i = 1; i <= allGuests.getNumberOfEntries(); i++) {
             Guest g = allGuests.getEntry(i);
-            if (g.getBillingAmount() >= minBalance) {
+            boolean matchesBalance = g.getBillingAmount() >= minBalance;
+            boolean matchesTier = !filterByTier
+                    || (g.getLoyaltyTier() != null && g.getLoyaltyTier().equalsIgnoreCase(loyaltyTierFilter));
+
+            if (matchesBalance && matchesTier) {
                 filtered.add(g);
             }
         }
