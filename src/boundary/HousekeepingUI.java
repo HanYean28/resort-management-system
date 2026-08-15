@@ -2,9 +2,7 @@ package boundary;
 
 import adt.ListInterface;
 import control.HousekeepingController;
-import entity.HousekeepingAuditReport;
 import entity.HousekeepingLog;
-import entity.HousekeepingShiftReport;
 import entity.Room;
 
 import java.util.Scanner;
@@ -21,19 +19,25 @@ public class HousekeepingUI {
         scanner = new Scanner(System.in);
     }
 
+    public HousekeepingUI(Scanner scanner) {
+        manager = new HousekeepingController();
+        this.scanner = scanner;
+    }
+
     public void start() {
         int choice = -1;
         while (choice != 0) {
             UIUtils.clearScreen();
             UIUtils.printHeader("HOUSEKEEPING AND TASK LOG MENU");
-            System.out.println(" [1] View All Rooms Status");
-            System.out.println(" [2] Update Room Cleanliness Status");
-            System.out.println(" [3] Rollback Last Status Update for a Room (Undo)");
-            System.out.println(" [4] Generate Report 1: Shift Turnover Performance");
-            System.out.println(" [5] Generate Report 2: Audit Trail & Activity Search");
+            System.out.println(" [1] Add Housekeeping Task");
+            System.out.println(" [2] View Current Tasks");
+            System.out.println(" [3] Update Cleaning Status");
+            System.out.println(" [4] Rollback Status");
+            System.out.println(" [5] View Task History");
+            System.out.println(" [6] Generate Reports");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-5): ");
+            System.out.print("Please enter choice (0-6): ");
 
             if (scanner.hasNextInt()) {
                 choice = scanner.nextInt();
@@ -47,19 +51,22 @@ public class HousekeepingUI {
 
             switch (choice) {
                 case 1:
-                    displayAllRooms();
+                    handleAddTask();
                     break;
                 case 2:
-                    handleUpdateStatus();
+                    displayTasks();
                     break;
                 case 3:
-                    handleRollback();
+                    handleUpdateStatus();
                     break;
                 case 4:
-                    handleShiftTurnoverReport();
+                    handleRollback();
                     break;
                 case 5:
-                    handleAuditTrailReport();
+                    handleViewTaskHistory();
+                    break;
+                case 6:
+                    handleReports();
                     break;
                 case 0:
                     UIUtils.clearScreen();
@@ -75,457 +82,340 @@ public class HousekeepingUI {
         }
     }
 
-    private void displayAllRooms() {
+    private void handleAddTask() {
         UIUtils.clearScreen();
-        UIUtils.printHeader("ALL ROOMS STATUS OVERVIEW");
+        UIUtils.printHeader("ADD HOUSEKEEPING TASK");
+        displayRoomTable(manager.getAllRooms());
 
-        ListInterface<Room> rooms = manager.getAllRooms();
-        if (rooms.isEmpty()) {
-            System.out.println("No room records found.");
+        Room room = promptRoom("Enter Room Number to mark as Dirty (or 0 to cancel): ");
+        if (room == null) {
+            System.out.println("\nAdd task cancelled.");
             return;
         }
 
-        System.out.printf("%-14s | %-15s | %-22s | %-19s%n",
-                "Room Number", "Room Type", "Cleanliness Status", "Last Updated");
-        UIUtils.printSectionLine();
-        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
-            Room r = rooms.getEntry(i);
-            System.out.printf("%-14s | %-15s | %-22s | %-19s%n",
-                    r.getRoomNumber(), r.getRoomType(), r.getCleanlinessStatus(), r.getLastUpdate());
+        String error = manager.addHousekeepingTask(room.getRoomNumber());
+        if (error == null) {
+            System.out.println("\nHousekeeping task added successfully.");
+            printRoomSummary(manager.getRoom(room.getRoomNumber()));
+        } else {
+            UIUtils.printError(error);
         }
-        UIUtils.printSectionLine();
-        System.out.println("Total Rooms Listed: " + rooms.getNumberOfEntries());
+    }
+
+    private void displayTasks() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("CURRENT HOUSEKEEPING TASKS");
+
+        ListInterface<Room> tasks = manager.getActiveTasks();
+        if (tasks.isEmpty()) {
+            System.out.println("No current housekeeping tasks found.");
+            return;
+        }
+
+        displayRoomTable(tasks);
+        System.out.println("Total Current Tasks: " + tasks.getNumberOfEntries());
     }
 
     private void handleUpdateStatus() {
-        String roomNum = null;
-        Room room = null;
-        String lastError = null;
+        UIUtils.clearScreen();
+        UIUtils.printHeader("UPDATE CLEANING STATUS");
+        displayTasks();
 
-        while (room == null) {
-            UIUtils.clearScreen();
-            UIUtils.printHeader("UPDATE ROOM CLEANLINESS STATUS");
-            if (lastError != null) {
-                UIUtils.printError(lastError);
-                System.out.println();
-            }
-            System.out.print("Enter Room Number to update (or 0 to cancel): ");
-            roomNum = scanner.nextLine().trim();
-
-            if (roomNum.equals("0")) {
-                System.out.println("\nUpdate cancelled. Returning to menu.");
-                return;
-            }
-
-            if (roomNum.isEmpty()) {
-                lastError = "Room number cannot be empty.";
-                continue;
-            }
-
-            room = manager.getRoom(roomNum);
-            if (room == null) {
-                lastError = "Room '" + roomNum + "' not found. Please try again.";
-            }
+        Room room = promptRoom("Enter Room Number to update (or 0 to cancel): ");
+        if (room == null) {
+            System.out.println("\nUpdate cancelled.");
+            return;
         }
 
+        if (room.getCleanlinessStatus().equals(HousekeepingController.STATUS_READY)) {
+            UIUtils.printError("Ready rooms do not have an active cleaning task. Use Add Housekeeping Task first.");
+            return;
+        }
         String[] options = manager.getAllowedTargetStatuses(room.getCleanlinessStatus());
         if (options.length == 0) {
-            UIUtils.clearScreen();
-            UIUtils.printHeader("UPDATE ROOM CLEANLINESS STATUS");
-            System.out.println("Room Number    : " + room.getRoomNumber());
-            System.out.println("\nNo status updates available for this room.");
+            UIUtils.printError("No status update available for this room.");
             return;
         }
 
-        while (true) {
-            UIUtils.clearScreen();
-            UIUtils.printHeader("UPDATE ROOM CLEANLINESS STATUS");
-            printRoomSummary(room);
+        String targetStatus = options[0];
+        System.out.println();
+        printRoomSummary(room);
+        System.out.println("Next Status: " + targetStatus);
+        System.out.print("Confirm update? (Y/N): ");
 
-            System.out.println("\nAvailable Actions for this Room:");
-            for (int i = 0; i < options.length; i++) {
-                System.out.printf(" [%d] %s%n", i + 1,
-                        formatActionDescription(room.getCleanlinessStatus(), options[i]));
-            }
-            System.out.println(" [0] Cancel & Return");
-            UIUtils.printSectionLine();
-            System.out.print("Please press an option key [0-" + options.length + "]: ");
-
-            Integer opt = readIntOption(0, options.length);
-            if (opt == null) {
-                System.out.println();
-                UIUtils.printError("Invalid input! Please enter a number.");
-                UIUtils.pressEnterToContinue(scanner);
-                continue;
-            }
-
-            if (opt == 0) {
-                System.out.println("\nUpdate cancelled. Returning to menu.");
-                return;
-            }
-
-            String targetStatus = options[opt - 1];
-            String error = manager.updateRoomStatus(roomNum, targetStatus);
-            if (error == null) {
-                room = manager.getRoom(roomNum);
-                System.out.println("\nSTATUS UPDATE SUCCESSFUL!");
-                printRoomSummary(room);
-            } else {
-                System.out.println("\n" + error);
-            }
+        String confirm = readYesNoInput();
+        if (confirm == null || confirm.equalsIgnoreCase("N")) {
+            System.out.println("\nUpdate cancelled.");
             return;
+        }
+
+        String error = manager.updateRoomStatus(room.getRoomNumber(), targetStatus);
+        if (error == null) {
+            System.out.println("\nStatus updated successfully.");
+            printRoomSummary(manager.getRoom(room.getRoomNumber()));
+        } else {
+            UIUtils.printError(error);
         }
     }
 
-    private void handleAuditTrailReport() {
+    private void handleRollback() {
         UIUtils.clearScreen();
-        UIUtils.printHeader("REPORT 2: AUDIT TRAIL & ACTIVITY SEARCH");
+        UIUtils.printHeader("ROLLBACK STATUS");
 
-        String shiftCode = promptShiftSelection();
-        if (shiftCode == null) {
-            System.out.println("\nReport generation cancelled.");
+        Room room = promptRoom("Enter Room Number to rollback (or 0 to cancel): ");
+        if (room == null) {
+            System.out.println("\nRollback cancelled.");
             return;
         }
 
-        String[] scopeSelection = promptAuditScope();
-        if (scopeSelection == null) {
-            System.out.println("\nReport generation cancelled.");
-            return;
-        }
-        String scopeMode = scopeSelection[0];
-        String roomNumberFilter = scopeSelection[1];
-        String roomTypeFilter = scopeSelection[2];
-
-        String transitionFilter = promptTransitionFilter();
-        if (transitionFilter == null) {
-            System.out.println("\nReport generation cancelled.");
+        HousekeepingLog lastAction = manager.peekLastRollbackAction(room.getRoomNumber());
+        if (lastAction == null) {
+            System.out.println("\nNo status changes found for this room in the current session.");
             return;
         }
 
-        String sortCode = promptSortOrder();
-        if (sortCode == null) {
-            System.out.println("\nReport generation cancelled.");
+        System.out.println();
+        System.out.println("Last Change : " + lastAction.getOldStatus() + " -> " + lastAction.getNewStatus());
+        System.out.println("Timestamp   : " + lastAction.getTimestamp());
+        System.out.println("Will Restore: " + lastAction.getOldStatus());
+        System.out.println("Undo Steps  : " + manager.getRollbackStackSize(room.getRoomNumber()));
+        UIUtils.printSectionLine();
+        System.out.print("Confirm rollback? (Y/N): ");
+
+        String confirm = readYesNoInput();
+        if (confirm == null || confirm.equalsIgnoreCase("N")) {
+            System.out.println("\nRollback cancelled.");
             return;
         }
 
-        HousekeepingAuditReport report = manager.generateAuditTrailReport(
-                scopeMode, shiftCode, roomNumberFilter, roomTypeFilter, transitionFilter, sortCode);
-
-        while (true) {
-            UIUtils.clearScreen();
-            displayAuditTrailReport(report);
-
-            System.out.println();
-            UIUtils.printSectionLine();
-            System.out.println(" [REPORT ACTIONS]");
-            System.out.println(" [1] Save report to file");
-            System.out.println(" [0] Return to menu (do not save)");
-            UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-1): ");
-
-            Integer action = readIntOption(0, 1);
-            if (action == null) {
-                System.out.println("\nInvalid input! Please enter a number.");
-                UIUtils.pressEnterToContinue(scanner);
-                continue;
-            }
-            if (action == 0) {
-                System.out.println("\nReturning to menu without saving.");
-                return;
-            }
-
-            if (!confirmSaveAuditReport(report)) {
-                continue;
-            }
-
-            String savedPath = manager.saveAuditTrailReport(report);
-            if (savedPath != null) {
-                System.out.println("\n[SUCCESS] Saved to: " + savedPath);
-            } else {
-                UIUtils.printError("Unable to save report file.");
-            }
-            return;
+        HousekeepingLog rolledBack = manager.rollbackLastAction(room.getRoomNumber());
+        if (rolledBack == null) {
+            UIUtils.printError("Rollback failed.");
+        } else {
+            System.out.println("\nRollback successful.");
+            printRoomSummary(manager.getRoom(room.getRoomNumber()));
         }
     }
 
-    private void displayAuditTrailReport(HousekeepingAuditReport report) {
-        ListInterface<String> lines = manager.buildAuditReportLines(report);
-        for (int i = 1; i <= lines.getNumberOfEntries(); i++) {
-            System.out.println(lines.getEntry(i));
-        }
-    }
-
-    private boolean confirmSaveAuditReport(HousekeepingAuditReport report) {
-        if (!manager.auditReportFileExists(report)) {
-            return true;
-        }
-
-        while (true) {
-            UIUtils.clearScreen();
-            System.out.println("==================================================================");
-            System.out.println("                    REPORT EXPORT & OPTIONS");
-            System.out.println("==================================================================");
-            System.out.println("[NOTICE] Saved file detected: " + manager.getAuditReportDisplayPath(report));
-            System.out.println("\nChoose Action:");
-            System.out.println("  [1] Overwrite & Update Saved Report");
-            System.out.println("  [0] Do Not Save (View Only)");
-            UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-1): ");
-
-            Integer choice = readIntOption(0, 1);
-            if (choice == null) {
-                System.out.println("\nInvalid input! Please enter a number.");
-                UIUtils.pressEnterToContinue(scanner);
-                continue;
-            }
-            return choice == 1;
-        }
-    }
-
-    private String[] promptAuditScope() {
-        while (true) {
-            System.out.println("\nSelect audit scope:");
-            System.out.println(" [1] Specific Room");
-            System.out.println(" [2] Room Type");
-            System.out.println(" [3] Shift Activity (all rooms in shift)");
-            System.out.println(" [0] Cancel");
-            UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-3): ");
-
-            Integer choice = readIntOption(0, 3);
-            if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 3.");
-                continue;
-            }
-            if (choice == 0) {
-                return null;
-            }
-            if (choice == 1) {
-                while (true) {
-                    System.out.print("\nEnter Room Number (or 0 to go back): ");
-                    String roomNumber = scanner.nextLine().trim();
-                    if (roomNumber.equals("0")) {
-                        break;
-                    }
-                    if (roomNumber.isEmpty()) {
-                        System.out.println("\nRoom number cannot be empty.");
-                        continue;
-                    }
-                    if (manager.getRoom(roomNumber) == null) {
-                        System.out.println("\nRoom '" + roomNumber + "' not found.");
-                        continue;
-                    }
-                    return new String[] {
-                            HousekeepingController.SCOPE_ROOM,
-                            roomNumber,
-                            HousekeepingController.FILTER_ALL
-                    };
-                }
-                continue;
-            }
-            if (choice == 2) {
-                String roomType = promptRoomTypeFilter();
-                if (roomType == null) {
-                    continue;
-                }
-                return new String[] {
-                        HousekeepingController.SCOPE_ROOM_TYPE,
-                        HousekeepingController.FILTER_ALL,
-                        roomType
-                    };
-            }
-            return new String[] {
-                    HousekeepingController.SCOPE_SHIFT,
-                    HousekeepingController.FILTER_ALL,
-                    HousekeepingController.FILTER_ALL
-            };
-        }
-    }
-
-    private String promptTransitionFilter() {
-        while (true) {
-            System.out.println("\nApply transition filter:");
-            System.out.println(" [1] All Transitions");
-            System.out.println(" [2] To Ready");
-            System.out.println(" [3] To Dirty");
-            System.out.println(" [4] Completions (Inspected --> Ready)");
-            System.out.println(" [0] Cancel");
-            UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-4): ");
-
-            Integer choice = readIntOption(0, 4);
-            if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 4.");
-                continue;
-            }
-            if (choice == 0) {
-                return null;
-            }
-            if (choice == 1) {
-                return HousekeepingController.TRANSITION_ALL;
-            }
-            if (choice == 2) {
-                return HousekeepingController.TRANSITION_TO_READY;
-            }
-            if (choice == 3) {
-                return HousekeepingController.TRANSITION_TO_DIRTY;
-            }
-            return HousekeepingController.TRANSITION_COMPLETION;
-        }
-    }
-
-    private String promptSortOrder() {
-        while (true) {
-            System.out.println("\nSelect sort order:");
-            System.out.println(" [1] Newest First");
-            System.out.println(" [2] Oldest First");
-            System.out.println(" [3] Room Number");
-            System.out.println(" [0] Cancel");
-            UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-3): ");
-
-            Integer choice = readIntOption(0, 3);
-            if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 3.");
-                continue;
-            }
-            if (choice == 0) {
-                return null;
-            }
-            if (choice == 1) {
-                return HousekeepingController.SORT_TIMESTAMP_DESC;
-            }
-            if (choice == 2) {
-                return HousekeepingController.SORT_TIMESTAMP_ASC;
-            }
-            return HousekeepingController.SORT_ROOM_NUMBER;
-        }
-    }
-
-    private void handleShiftTurnoverReport() {
+    private void handleViewTaskHistory() {
         UIUtils.clearScreen();
-        UIUtils.printHeader("REPORT 1: SHIFT TURNOVER PERFORMANCE");
+        UIUtils.printHeader("VIEW TASK HISTORY");
 
-        String shiftCode = promptShiftSelection();
-        if (shiftCode == null) {
-            System.out.println("\nReport generation cancelled.");
+        System.out.print("Enter Room Number (or ALL for all rooms, 0 to cancel): ");
+        String roomNumber = scanner.nextLine().trim();
+        if (roomNumber.equals("0")) {
+            System.out.println("\nView history cancelled.");
+            return;
+        }
+        if (roomNumber.isEmpty()) {
+            UIUtils.printError("Room number cannot be empty.");
+            return;
+        }
+        if (!roomNumber.equalsIgnoreCase(HousekeepingController.FILTER_ALL)
+                && manager.getRoom(roomNumber) == null) {
+            UIUtils.printError("Room '" + roomNumber + "' not found.");
+            return;
+        }
+
+        ListInterface<HousekeepingLog> logs = manager.getTaskHistory(
+                roomNumber.equalsIgnoreCase(HousekeepingController.FILTER_ALL)
+                        ? HousekeepingController.FILTER_ALL
+                        : roomNumber);
+
+        UIUtils.clearScreen();
+        UIUtils.printHeader("TASK HISTORY");
+        if (logs.isEmpty()) {
+            System.out.println("No task history found.");
+            return;
+        }
+
+        System.out.printf("%-4s | %-6s | %-19s | %-22s | %-22s%n",
+                "No.", "Room", "Timestamp", "Old Status", "New Status");
+        UIUtils.printSectionLine();
+        for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
+            HousekeepingLog log = logs.getEntry(i);
+            System.out.printf("%-4d | %-6s | %-19s | %-22s | %-22s%n",
+                    i,
+                    log.getRoom().getRoomNumber(),
+                    log.getTimestamp(),
+                    log.getOldStatus(),
+                    log.getNewStatus());
+        }
+        UIUtils.printSectionLine();
+    }
+
+    private void handleReports() {
+        int choice = -1;
+        while (choice != 0) {
+            UIUtils.clearScreen();
+            UIUtils.printHeader("HOUSEKEEPING REPORTS");
+            System.out.println(" [1] Report 1: Room Cleaning Overview");
+            System.out.println(" [2] Report 2: Task History Report");
+            System.out.println(" [0] Back to Housekeeping Menu");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-2): ");
+
+            Integer selected = readIntOption(0, 2);
+            if (selected == null) {
+                System.out.println("\nInvalid input! Please enter a number between 0 and 2.");
+                UIUtils.pressEnterToContinue(scanner);
+                continue;
+            }
+            choice = selected;
+
+            switch (choice) {
+                case 1:
+                    handleStatusSummaryReport();
+                    UIUtils.pressEnterToContinue(scanner);
+                    break;
+                case 2:
+                    handleTaskHistoryReport();
+                    UIUtils.pressEnterToContinue(scanner);
+                    break;
+                case 0:
+                    break;
+                default:
+                    System.out.println("Invalid choice. Try again.");
+                    UIUtils.pressEnterToContinue(scanner);
+            }
+        }
+    }
+
+    private void handleStatusSummaryReport() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 1: ROOM CLEANING OVERVIEW");
+
+        String statusFilter = promptStatusFilter();
+        if (statusFilter == null) {
+            System.out.println("\nReport cancelled.");
             return;
         }
 
         String roomTypeFilter = promptRoomTypeFilter();
         if (roomTypeFilter == null) {
-            System.out.println("\nReport generation cancelled.");
+            System.out.println("\nReport cancelled.");
             return;
         }
 
-        HousekeepingShiftReport report = manager.generateShiftTurnoverReport(shiftCode, roomTypeFilter);
+        ListInterface<Room> reportRooms = manager.generateStatusSummaryReport(statusFilter, roomTypeFilter);
 
-        while (true) {
-            UIUtils.clearScreen();
-            displayShiftTurnoverReport(report);
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 1: ROOM CLEANING OVERVIEW");
+        System.out.println("Status Filter : " + formatFilter(statusFilter));
+        System.out.println("Room Type     : " + formatFilter(roomTypeFilter));
+        UIUtils.printSectionLine();
+        if (statusFilter.equals(HousekeepingController.FILTER_ALL)) {
+            System.out.println("Dirty                : "
+                    + manager.countRoomsByStatus(reportRooms, HousekeepingController.STATUS_DIRTY));
+            System.out.println("Cleaning In Progress : "
+                    + manager.countRoomsByStatus(reportRooms, HousekeepingController.STATUS_CLEANING));
+            System.out.println("Inspected            : "
+                    + manager.countRoomsByStatus(reportRooms, HousekeepingController.STATUS_INSPECTED));
+            System.out.println("Ready                : "
+                    + manager.countRoomsByStatus(reportRooms, HousekeepingController.STATUS_READY));
+            System.out.println("Total Matched Rooms  : " + reportRooms.getNumberOfEntries());
+        } else {
+            System.out.println("Matched Rooms : " + reportRooms.getNumberOfEntries());
+        }
+        UIUtils.printSectionLine();
+        displayRoomTable(reportRooms);
+    }
 
-            System.out.println();
-            UIUtils.printSectionLine();
-            System.out.println(" [REPORT ACTIONS]");
-            System.out.println(" [1] Save report to file");
-            System.out.println(" [0] Return to menu (do not save)");
-            UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-1): ");
+    private void handleTaskHistoryReport() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 2: TASK HISTORY");
 
-            Integer action = readIntOption(0, 1);
-            if (action == null) {
-                System.out.println("\nInvalid input! Please enter a number.");
-                UIUtils.pressEnterToContinue(scanner);
-                continue;
-            }
-            if (action == 0) {
-                System.out.println("\nReturning to menu without saving.");
-                return;
-            }
-
-            if (!confirmSaveReport(report)) {
-                continue;
-            }
-
-            String savedPath = manager.saveShiftTurnoverReport(report);
-            if (savedPath != null) {
-                System.out.println("\n[SUCCESS] Saved to: " + savedPath);
-            } else {
-                UIUtils.printError("Unable to save report file.");
-            }
+        System.out.print("Enter Room Number, or press Enter for ALL: ");
+        String roomNumber = scanner.nextLine().trim();
+        if (roomNumber.isEmpty()) {
+            roomNumber = HousekeepingController.FILTER_ALL;
+        } else if (manager.getRoom(roomNumber) == null) {
+            UIUtils.printError("Room '" + roomNumber + "' not found.");
             return;
         }
-    }
 
-    private void displayShiftTurnoverReport(HousekeepingShiftReport report) {
-        ListInterface<String> lines = manager.buildReportLines(report);
-        for (int i = 1; i <= lines.getNumberOfEntries(); i++) {
-            System.out.println(lines.getEntry(i));
-        }
-    }
-
-    private boolean confirmSaveReport(HousekeepingShiftReport report) {
-        if (!manager.reportFileExists(report)) {
-            return true;
+        String transitionFilter = promptTransitionFilter();
+        if (transitionFilter == null) {
+            System.out.println("\nReport cancelled.");
+            return;
         }
 
+        Boolean newestFirst = promptHistorySortOrder();
+        if (newestFirst == null) {
+            System.out.println("\nReport cancelled.");
+            return;
+        }
+
+        ListInterface<HousekeepingLog> logs = manager.generateTaskHistoryReport(
+                roomNumber, transitionFilter, newestFirst.booleanValue());
+
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 2: TASK HISTORY");
+        System.out.println("Room Filter       : " + formatFilter(roomNumber));
+        System.out.println("New Status Filter : " + formatFilter(transitionFilter));
+        System.out.println("Sort Order        : " + (newestFirst.booleanValue() ? "Newest First" : "Oldest First"));
+        UIUtils.printSectionLine();
+        displayHistoryTable(logs);
+        System.out.println("Total History Rows: " + logs.getNumberOfEntries());
+    }
+
+    private Room promptRoom(String prompt) {
+        System.out.print(prompt);
+        String roomNumber = scanner.nextLine().trim();
+        if (roomNumber.equals("0")) {
+            return null;
+        }
+        if (roomNumber.isEmpty()) {
+            UIUtils.printError("Room number cannot be empty.");
+            return null;
+        }
+
+        Room room = manager.getRoom(roomNumber);
+        if (room == null) {
+            UIUtils.printError("Room '" + roomNumber + "' not found.");
+        }
+        return room;
+    }
+
+    private String promptStatusFilter() {
         while (true) {
-            UIUtils.clearScreen();
-            System.out.println("==================================================================");
-            System.out.println("                    REPORT EXPORT & OPTIONS");
-            System.out.println("==================================================================");
-            System.out.println("[NOTICE] Saved file detected: " + manager.getReportDisplayPath(report));
-            System.out.println("\nChoose Action:");
-            System.out.println("  [1] Overwrite & Update Saved Report");
-            System.out.println("  [0] Do Not Save (View Only)");
-            UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-1): ");
-
-            Integer choice = readIntOption(0, 1);
-            if (choice == null) {
-                System.out.println("\nInvalid input! Please enter a number.");
-                UIUtils.pressEnterToContinue(scanner);
-                continue;
-            }
-            return choice == 1;
-        }
-    }
-
-    private String promptShiftSelection() {
-        while (true) {
-            System.out.println("\nSelect shift window for turnover analysis:");
-            System.out.println(" [1] Current Shift (auto-detect)");
-            System.out.println(" [2] Morning Shift (07:00-14:59)");
-            System.out.println(" [3] Afternoon Shift (15:00-22:59)");
-            System.out.println(" [4] Night Shift (23:00-06:59)");
+            System.out.println("Filter by status:");
+            System.out.println(" [1] All Statuses");
+            System.out.println(" [2] Dirty");
+            System.out.println(" [3] Cleaning In Progress");
+            System.out.println(" [4] Inspected");
+            System.out.println(" [5] Ready");
             System.out.println(" [0] Cancel");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-4): ");
+            System.out.print("Please enter choice (0-5): ");
 
-            Integer choice = readIntOption(0, 4);
+            Integer choice = readIntOption(0, 5);
             if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 4.");
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 5.");
                 continue;
             }
             if (choice == 0) {
                 return null;
             }
             if (choice == 1) {
-                return HousekeepingController.SHIFT_CURRENT;
+                return HousekeepingController.FILTER_ALL;
             }
             if (choice == 2) {
-                return HousekeepingController.SHIFT_MORNING;
+                return HousekeepingController.STATUS_DIRTY;
             }
             if (choice == 3) {
-                return HousekeepingController.SHIFT_AFTERNOON;
+                return HousekeepingController.STATUS_CLEANING;
             }
-            return HousekeepingController.SHIFT_NIGHT;
+            if (choice == 4) {
+                return HousekeepingController.STATUS_INSPECTED;
+            }
+            return HousekeepingController.STATUS_READY;
         }
     }
 
     private String promptRoomTypeFilter() {
         while (true) {
-            System.out.println("\nApply room type filter:");
+            System.out.println("\nFilter by room type:");
             System.out.println(" [1] All Room Types");
             System.out.println(" [2] Deluxe");
             System.out.println(" [3] Standard");
@@ -555,143 +445,117 @@ public class HousekeepingUI {
         }
     }
 
-    private void handleRollback() {
-        String roomNum = null;
-        Room room = null;
-        String lastError = null;
-
-        while (room == null) {
-            UIUtils.clearScreen();
-            UIUtils.printHeader("ROLLBACK LAST STATUS UPDATE");
-            if (lastError != null) {
-                UIUtils.printError(lastError);
-                System.out.println();
-            }
-            System.out.print("Enter Room Number to undo (or 0 to cancel): ");
-            roomNum = scanner.nextLine().trim();
-
-            if (roomNum.equals("0")) {
-                System.out.println("\nRollback cancelled. Returning to menu.");
-                return;
-            }
-
-            if (roomNum.isEmpty()) {
-                lastError = "Room number cannot be empty.";
-                continue;
-            }
-
-            room = manager.getRoom(roomNum);
-            if (room == null) {
-                lastError = "Room '" + roomNum + "' not found. Please try again.";
-            }
-        }
-
-        HousekeepingLog lastAction = manager.peekLastRollbackAction(roomNum);
-        if (lastAction == null) {
-            UIUtils.clearScreen();
-            UIUtils.printHeader("ROLLBACK LAST STATUS UPDATE — ROOM " + roomNum);
-            System.out.println("\nNo status changes found for this room in the current session.");
-            System.out.println("Undo history is kept in memory only and clears when the program restarts.");
-            return;
-        }
-
-        String roomType = room.getRoomType();
-        int undoStepsRemaining = manager.getRollbackStackSize(roomNum);
-
+    private String promptTransitionFilter() {
         while (true) {
-            UIUtils.clearScreen();
-            UIUtils.printHeader("ROLLBACK LAST STATUS UPDATE — ROOM " + roomNum);
-
-            System.out.println("\n [PENDING UNDO PREVIEW]");
-            System.out.println(" Timestamp   : " + lastAction.getTimestamp());
-            System.out.println(" Room Target : Room " + lastAction.getRoom().getRoomNumber() + " (" + roomType + ")");
-            System.out.println(" Action      : '" + lastAction.getOldStatus() + "' --> '"
-                    + lastAction.getNewStatus() + "'");
-            System.out.println(" Restoration : Room will return to '" + lastAction.getOldStatus() + "'");
-            System.out.println(" Undo Steps  : " + undoStepsRemaining + " remaining for this room in this session");
+            System.out.println("\nFilter by new status:");
+            System.out.println(" [1] All Status Changes");
+            System.out.println(" [2] Dirty");
+            System.out.println(" [3] Cleaning In Progress");
+            System.out.println(" [4] Inspected");
+            System.out.println(" [5] Ready");
+            System.out.println(" [0] Cancel");
             UIUtils.printSectionLine();
-            System.out.print("Confirm execution? (Y/N): ");
+            System.out.print("Please enter choice (0-5): ");
 
-            String confirm = readYesNoInput();
-            if (confirm == null) {
-                System.out.println("\nInvalid input! Please enter Y or N only.");
+            Integer choice = readIntOption(0, 5);
+            if (choice == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 5.");
                 continue;
             }
-
-            if (confirm.equalsIgnoreCase("N")) {
-                System.out.println("\nRollback cancelled. Returning to menu.");
-                return;
+            if (choice == 0) {
+                return null;
             }
-
-            System.out.println("\nExecuting rollback...");
-            HousekeepingLog log = manager.rollbackLastAction(roomNum);
-            if (log != null) {
-                System.out.println("ROLLBACK SUCCESSFUL!");
-                printRollbackDisruptionNotice(log, roomType);
-            } else {
-                System.out.println("Rollback failed.");
+            if (choice == 1) {
+                return HousekeepingController.FILTER_ALL;
             }
+            if (choice == 2) {
+                return HousekeepingController.STATUS_DIRTY;
+            }
+            if (choice == 3) {
+                return HousekeepingController.STATUS_CLEANING;
+            }
+            if (choice == 4) {
+                return HousekeepingController.STATUS_INSPECTED;
+            }
+            return HousekeepingController.STATUS_READY;
+        }
+    }
+
+    private Boolean promptHistorySortOrder() {
+        while (true) {
+            System.out.println("\nSort history by timestamp:");
+            System.out.println(" [1] Newest First");
+            System.out.println(" [2] Oldest First");
+            System.out.println(" [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-2): ");
+
+            Integer choice = readIntOption(0, 2);
+            if (choice == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 2.");
+                continue;
+            }
+            if (choice == 0) {
+                return null;
+            }
+            return Boolean.valueOf(choice == 1);
+        }
+    }
+
+    private void displayRoomTable(ListInterface<Room> rooms) {
+        if (rooms.isEmpty()) {
+            System.out.println("No room records found.");
             return;
         }
+
+        System.out.printf("%-6s | %-10s | %-22s | %-19s%n",
+                "Room", "Type", "Status", "Last Updated");
+        UIUtils.printSectionLine();
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            Room room = rooms.getEntry(i);
+            System.out.printf("%-6s | %-10s | %-22s | %-19s%n",
+                    room.getRoomNumber(),
+                    room.getRoomType(),
+                    room.getCleanlinessStatus(),
+                    room.getLastUpdate());
+        }
+        UIUtils.printSectionLine();
     }
 
     private void printRoomSummary(Room room) {
         System.out.println("Room Number    : " + room.getRoomNumber());
         System.out.println("Room Type      : " + room.getRoomType());
-        System.out.println("Current Status : [" + room.getCleanlinessStatus() + "]");
+        System.out.println("Current Status : " + room.getCleanlinessStatus());
         System.out.println("Last Updated   : " + room.getLastUpdate());
         UIUtils.printSectionLine();
     }
 
-    private String formatActionDescription(String currentStatus, String targetStatus) {
-        if (targetStatus.equals("Cleaning In Progress")) {
-            return "Start Cleaning (Set to 'Cleaning In Progress')";
+    private void displayHistoryTable(ListInterface<HousekeepingLog> logs) {
+        if (logs.isEmpty()) {
+            System.out.println("No matching task history found.");
+            return;
         }
-        if (targetStatus.equals("Inspected")) {
-            return "Finish Cleaning (Set to 'Inspected')";
+
+        System.out.printf("%-4s | %-6s | %-19s | %-22s | %-22s%n",
+                "No.", "Room", "Timestamp", "Old Status", "New Status");
+        UIUtils.printSectionLine();
+        for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
+            HousekeepingLog log = logs.getEntry(i);
+            System.out.printf("%-4d | %-6s | %-19s | %-22s | %-22s%n",
+                    i,
+                    log.getRoom().getRoomNumber(),
+                    log.getTimestamp(),
+                    log.getOldStatus(),
+                    log.getNewStatus());
         }
-        if (targetStatus.equals("Ready")) {
-            return "Approve Room (Set to 'Ready')";
-        }
-        if (targetStatus.equals("Dirty")) {
-            if (currentStatus.equals("Ready")) {
-                return "Guest Checked Out (Set to 'Dirty')";
-            }
-            return "Abort & Reset (Set back to 'Dirty')";
-        }
-        return formatStatusOptionLabel(targetStatus);
+        UIUtils.printSectionLine();
     }
 
-    private String formatStatusOptionLabel(String status) {
-        if (status.equals("Dirty")) {
-            return "Reset to Dirty";
+    private String formatFilter(String value) {
+        if (value.equals(HousekeepingController.FILTER_ALL)) {
+            return "ALL";
         }
-        return status;
-    }
-
-    private void printRollbackDisruptionNotice(HousekeepingLog log, String roomType) {
-        System.out.println("\n[OPERATIONAL DISRUPTION DETECTED]");
-        String roomLabel = "Room " + log.getRoom().getRoomNumber() + " (" + roomType + ")";
-        String oldStatus = log.getOldStatus();
-        String newStatus = log.getNewStatus();
-
-        if (oldStatus.equals("Dirty") && newStatus.equals("Cleaning In Progress")) {
-            System.out.println("-> Cleaning task for " + roomLabel + " has been ABORTED mid-clean.");
-            System.out.println("-> Front-Desk Notified: Room marked as OCCUPIED (Late Check-Out/Guest Return).");
-            System.out.println("-> System State: Room locked out from incoming walk-in check-in queues.");
-        } else if (oldStatus.equals("Cleaning In Progress") && newStatus.equals("Inspected")) {
-            System.out.println("-> Inspection approval for " + roomLabel + " has been REVOKED.");
-            System.out.println("-> Housekeeping Team Notified: Room returned to 'Cleaning In Progress'.");
-        } else if (oldStatus.equals("Inspected") && newStatus.equals("Ready")) {
-            System.out.println("-> Ready status for " + roomLabel + " has been WITHDRAWN.");
-            System.out.println("-> Front-Desk Notified: Room removed from available check-in pool.");
-        } else if (newStatus.equals("Dirty")) {
-            System.out.println("-> Dirty reset for " + roomLabel + " has been UNDONE.");
-            System.out.println("-> Room restored to previous workflow state: '" + oldStatus + "'.");
-        } else {
-            System.out.println("-> Status change for " + roomLabel + " has been reversed.");
-            System.out.println("-> Room restored to previous state: '" + oldStatus + "'.");
-        }
+        return value;
     }
 
     private Integer readIntOption(int min, int max) {
