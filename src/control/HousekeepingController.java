@@ -126,28 +126,6 @@ public class HousekeepingController {
         return activeTasks;
     }
 
-    public ListInterface<Room> searchRoomsOrTasks(String keyword, String statusFilter, String roomTypeFilter) {
-        ListInterface<Room> results = new ArrayList<>();
-        String searchText = keyword == null ? "" : keyword.trim().toLowerCase();
-
-        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
-            Room room = rooms.getEntry(i);
-            boolean matchesKeyword = searchText.isEmpty()
-                    || room.getRoomNumber().toLowerCase().contains(searchText)
-                    || room.getRoomType().toLowerCase().contains(searchText)
-                    || room.getCleanlinessStatus().toLowerCase().contains(searchText);
-            boolean matchesStatus = statusFilter.equals(FILTER_ALL)
-                    || room.getCleanlinessStatus().equalsIgnoreCase(statusFilter);
-            boolean matchesType = roomTypeFilter.equals(FILTER_ALL)
-                    || room.getRoomType().equalsIgnoreCase(roomTypeFilter);
-
-            if (matchesKeyword && matchesStatus && matchesType) {
-                results.add(room);
-            }
-        }
-        return results;
-    }
-
     public String updateRoomStatus(String roomNumber, String targetStatus) {
         Room room = getRoom(roomNumber);
         if (room == null) {
@@ -165,17 +143,6 @@ public class HousekeepingController {
 
         applyStatusChange(room, currentStatus, nextStatus, true);
         return null;
-    }
-
-    public String completeTask(String roomNumber) {
-        Room room = getRoom(roomNumber);
-        if (room == null) {
-            return "Room not found.";
-        }
-        if (!room.getCleanlinessStatus().equals(STATUS_INSPECTED)) {
-            return "Only inspected rooms can be completed.";
-        }
-        return updateRoomStatus(roomNumber, STATUS_READY);
     }
 
     public String[] getAllowedTargetStatuses(String currentStatus) {
@@ -246,6 +213,52 @@ public class HousekeepingController {
         return results;
     }
 
+    public ListInterface<Room> generateStatusSummaryReport(String statusFilter, String roomTypeFilter) {
+        ListInterface<Room> results = new ArrayList<>();
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            Room room = rooms.getEntry(i);
+            boolean matchesStatus = statusFilter.equals(FILTER_ALL)
+                    || room.getCleanlinessStatus().equalsIgnoreCase(statusFilter);
+            boolean matchesType = roomTypeFilter.equals(FILTER_ALL)
+                    || room.getRoomType().equalsIgnoreCase(roomTypeFilter);
+
+            if (matchesStatus && matchesType) {
+                results.add(room);
+            }
+        }
+        insertionSortRoomsByStatusThenNumber(results);
+        return results;
+    }
+
+    public ListInterface<HousekeepingLog> generateTaskHistoryReport(String roomNumberFilter,
+            String transitionFilter, boolean newestFirst) {
+        ListInterface<HousekeepingLog> results = new ArrayList<>();
+        for (int i = 1; i <= taskHistory.getNumberOfEntries(); i++) {
+            HousekeepingLog log = taskHistory.getEntry(i);
+            boolean matchesRoom = roomNumberFilter.equals(FILTER_ALL)
+                    || log.getRoom().getRoomNumber().equalsIgnoreCase(roomNumberFilter);
+            boolean matchesTransition = transitionFilter.equals(FILTER_ALL)
+                    || log.getNewStatus().equalsIgnoreCase(transitionFilter);
+
+            if (matchesRoom && matchesTransition) {
+                results.add(log);
+            }
+        }
+
+        insertionSortLogsByTimestamp(results, newestFirst);
+        return results;
+    }
+
+    public int countRoomsByStatus(ListInterface<Room> roomList, String status) {
+        int count = 0;
+        for (int i = 1; i <= roomList.getNumberOfEntries(); i++) {
+            if (roomList.getEntry(i).getCleanlinessStatus().equals(status)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private void applyStatusChange(Room room, String oldStatus, String newStatus, boolean allowRollback) {
         String timestamp = getCurrentTimestamp();
         room.setCleanlinessStatus(newStatus);
@@ -272,7 +285,7 @@ public class HousekeepingController {
         try (BufferedReader br = new BufferedReader(new FileReader(TASK_HISTORY_FILE))) {
             String line;
             while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty()) {
+                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
                     continue;
                 }
 
@@ -314,6 +327,55 @@ public class HousekeepingController {
             }
         }
         return false;
+    }
+
+    private void insertionSortRoomsByStatusThenNumber(ListInterface<Room> list) {
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
+            Room key = list.getEntry(i);
+            int j = i - 1;
+            while (j >= 1 && compareRoomsByStatusThenNumber(list.getEntry(j), key) > 0) {
+                list.replace(j + 1, list.getEntry(j));
+                j--;
+            }
+            list.replace(j + 1, key);
+        }
+    }
+
+    private int compareRoomsByStatusThenNumber(Room left, Room right) {
+        int statusCompare = getStatusOrder(left.getCleanlinessStatus()) - getStatusOrder(right.getCleanlinessStatus());
+        if (statusCompare != 0) {
+            return statusCompare;
+        }
+        return left.getRoomNumber().compareToIgnoreCase(right.getRoomNumber());
+    }
+
+    private int getStatusOrder(String status) {
+        for (int i = 0; i < STATUS_PHASES.length; i++) {
+            if (STATUS_PHASES[i].equals(status)) {
+                return i;
+            }
+        }
+        return STATUS_PHASES.length;
+    }
+
+    private void insertionSortLogsByTimestamp(ListInterface<HousekeepingLog> list, boolean newestFirst) {
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
+            HousekeepingLog key = list.getEntry(i);
+            int j = i - 1;
+            while (j >= 1 && compareLogTimestamp(list.getEntry(j), key, newestFirst) > 0) {
+                list.replace(j + 1, list.getEntry(j));
+                j--;
+            }
+            list.replace(j + 1, key);
+        }
+    }
+
+    private int compareLogTimestamp(HousekeepingLog left, HousekeepingLog right, boolean newestFirst) {
+        int result = left.getTimestamp().compareTo(right.getTimestamp());
+        if (newestFirst) {
+            return -result;
+        }
+        return result;
     }
 
     private String resolveCanonicalStatus(String status) {

@@ -31,17 +31,17 @@ public class UIUtils {
     }
 
     public static void printHeader(String title) {
-        System.out.println("==================================================");
-        System.out.println(centerText(title, 50));
-        System.out.println("==================================================");
+        System.out.println("==========================================================================");
+        System.out.println(centerText(title, 74));
+        System.out.println("==========================================================================");
     }
 
     public static void printSectionLine() {
-        System.out.println("--------------------------------------------------");
+        System.out.println("--------------------------------------------------------------------------");
     }
 
     public static void printError(String message) {
-        System.out.println(" [ERROR] " + message);
+        System.out.println("[ERROR] " + message);
     }
 
     private static String centerText(String text, int width) {

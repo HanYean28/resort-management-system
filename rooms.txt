@@ -1,4 +1,5 @@
-101|Deluxe|Inspected|2026-08-14 21:14:04|2026-08-14 21:13:32|N/A
+# roomNumber|roomType|cleanlinessStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
+101|Deluxe|Ready|2026-08-15 12:26:32|N/A|N/A
 102|Standard|Ready|N/A|N/A|N/A
 103|Suite|Ready|N/A|N/A|N/A
 104|Deluxe|Ready|N/A|N/A|N/A
