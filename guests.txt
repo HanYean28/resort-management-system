@@ -1,3 +1,4 @@
+# confirmationNo|name|phone|loyaltyTier|billingAmount|roomNo
 20260701|Tan Wei Ling|012-3456789|NONE|0.0|101
 20260702|Nurul Aisyah|013-2345678|Diamond|150.5|105
 20260703|Rajesh Kumar|016-7891234|Platinum|0.0|103

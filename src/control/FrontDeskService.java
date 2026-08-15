@@ -41,7 +41,7 @@ public class FrontDeskService {
         try (BufferedReader br = new BufferedReader(new FileReader(DATA_FILE))) {
             String line;
             while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty()) continue;
+                if (line.trim().isEmpty() || line.trim().startsWith("#")) continue;
                 String[] parts = line.split("\\|");
                 if (parts.length >= 6) {
                     Guest guest = new Guest(parts[0], parts[1], parts[2], parts[3],
@@ -68,6 +68,8 @@ public class FrontDeskService {
     /** Saves all current guest records back to guests.txt (in confirmationNo order). */
     public void saveGuestsToFile() {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(DATA_FILE))) {
+            bw.write("# confirmationNo|name|phone|loyaltyTier|billingAmount|roomNo");
+            bw.newLine();
             Iterator<Guest> it = guestTree.getInorderIterator();
             while (it.hasNext()) {
                 Guest g = it.next();
@@ -154,7 +156,7 @@ public class FrontDeskService {
         try (BufferedReader br = new BufferedReader(new FileReader(ROOMS_FILE))) {
             String line;
             while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty()) {
+                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
                     continue;
                 }
                 String[] parts = line.split("\\|");

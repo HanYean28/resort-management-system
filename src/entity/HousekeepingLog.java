@@ -3,7 +3,7 @@ package entity;
 import java.io.Serializable;
 
 /**
- * Audit trail entry to track each time a room status changes
+ * Task history entry to track each time a room status changes.
  * @author Chang Han Yean
  */
 public class HousekeepingLog implements Serializable {
