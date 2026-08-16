@@ -11,6 +11,7 @@ public class Guest implements Comparable<Guest> {
     private String loyaltyTier;
     private double billingAmount;
     private String roomNo;
+    private int arrivalOrder; // New attribute to track the order of arrival
 
     public Guest(String confirmationNo, String name, String phone, String loyaltyTier, double billingAmount,
             String roomNo) {
@@ -70,6 +71,14 @@ public class Guest implements Comparable<Guest> {
         this.roomNo = roomNo;
     }
 
+    public int getArrivalOrder() {
+        return arrivalOrder;
+    }
+
+    public void setArrivalOrder(int arrivalOrder) {
+        this.arrivalOrder = arrivalOrder;
+    }
+
     @Override
     public String toString() {
         return "Guest{" +
@@ -100,4 +109,5 @@ public class Guest implements Comparable<Guest> {
     public int compareTo(Guest other) {
         return this.confirmationNo.compareTo(other.confirmationNo);
     }
+
 }
