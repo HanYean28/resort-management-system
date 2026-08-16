@@ -71,7 +71,7 @@ public class Guest implements Comparable<Guest> {
         this.roomNo = roomNo;
     }
 
-    publlic int getArrivalOrder() {
+    public int getArrivalOrder() {
         return arrivalOrder;
     }
 
