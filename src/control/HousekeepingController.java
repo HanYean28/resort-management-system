@@ -59,7 +59,9 @@ public class HousekeepingController {
                 }
 
                 String[] parts = line.split("\\|");
-                if (parts.length >= 6) {
+                if (parts.length >= 7) {
+                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]));
+                } else if (parts.length >= 6) {
                     rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]));
                 } else if (parts.length == 4) {
                     rooms.add(new Room(parts[0], parts[1], parts[2], parts[3]));
@@ -74,12 +76,12 @@ public class HousekeepingController {
 
     public void saveRoomsToFile() {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(DATA_FILE))) {
-            bw.write("# roomNumber|roomType|cleanlinessStatus|lastUpdate|dirtySince|lastTurnaroundMinutes");
+            bw.write("# roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes");
             bw.newLine();
             for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
                 Room room = rooms.getEntry(i);
                 bw.write(room.getRoomNumber() + "|" + room.getRoomType() + "|" + room.getCleanlinessStatus()
-                        + "|" + room.getLastUpdate() + "|" + room.getDirtySince() + "|"
+                        + "|" + room.getOccupancyStatus() + "|" + room.getLastUpdate() + "|" + room.getDirtySince() + "|"
                         + room.getLastTurnaroundMinutes());
                 bw.newLine();
             }
@@ -111,6 +113,9 @@ public class HousekeepingController {
                 || room.getCleanlinessStatus().equals(STATUS_CLEANING)
                 || room.getCleanlinessStatus().equals(STATUS_INSPECTED)) {
             return "This room already has an active housekeeping task.";
+        }
+        if (room.getOccupancyStatus().equalsIgnoreCase("Occupied")) {
+            return "Occupied rooms cannot be marked as housekeeping tasks until checkout.";
         }
         return updateRoomStatus(roomNumber, STATUS_DIRTY);
     }

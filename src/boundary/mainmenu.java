@@ -48,8 +48,7 @@ public class mainmenu {
                     UIUtils.pressEnterToContinue(scanner);
                     break;
                 case 4:
-                    new FrontDeskUI().start();
-                    UIUtils.pressEnterToContinue(scanner);
+                    new FrontDeskUI(scanner).start();
                     break;
                 case 0:
                     System.out.println("Exiting the system. Goodbye!");
