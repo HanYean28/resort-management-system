@@ -508,15 +508,16 @@ public class HousekeepingUI {
             return;
         }
 
-        System.out.printf("%-6s | %-10s | %-22s | %-19s%n",
-                "Room", "Type", "Status", "Last Updated");
+        System.out.printf("%-6s | %-10s | %-22s | %-10s | %-19s%n",
+                "Room", "Type", "Clean Status", "Occupancy", "Last Updated");
         UIUtils.printSectionLine();
         for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
             Room room = rooms.getEntry(i);
-            System.out.printf("%-6s | %-10s | %-22s | %-19s%n",
+            System.out.printf("%-6s | %-10s | %-22s | %-10s | %-19s%n",
                     room.getRoomNumber(),
                     room.getRoomType(),
                     room.getCleanlinessStatus(),
+                    room.getOccupancyStatus(),
                     room.getLastUpdate());
         }
         UIUtils.printSectionLine();
@@ -525,7 +526,8 @@ public class HousekeepingUI {
     private void printRoomSummary(Room room) {
         System.out.println("Room Number    : " + room.getRoomNumber());
         System.out.println("Room Type      : " + room.getRoomType());
-        System.out.println("Current Status : " + room.getCleanlinessStatus());
+        System.out.println("Clean Status   : " + room.getCleanlinessStatus());
+        System.out.println("Occupancy      : " + room.getOccupancyStatus());
         System.out.println("Last Updated   : " + room.getLastUpdate());
         UIUtils.printSectionLine();
     }

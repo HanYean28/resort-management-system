@@ -2,6 +2,7 @@ package boundary;
 
 import adt.ListInterface;
 import control.FrontDeskService;
+import entity.BillingRecord;
 import entity.Guest;
 import entity.Room;
 import java.util.Scanner;
@@ -18,6 +19,11 @@ public class FrontDeskUI {
         scanner = new Scanner(System.in);
     }
 
+    public FrontDeskUI(Scanner scanner) {
+        service = new FrontDeskService();
+        this.scanner = scanner;
+    }
+
     public void start() {
         int choice = -1;
         while (choice != 0) {
@@ -27,7 +33,7 @@ public class FrontDeskUI {
             System.out.println(" [2] Search Guest by Confirmation Number");
             System.out.println(" [3] Remove Guest Record");
             System.out.println(" [4] Generate Report 1: Guest Directory Report");
-            System.out.println(" [5] Generate Report 2: Outstanding Billing Report");
+            System.out.println(" [5] Generate Report 2: Guest Billing Report");
             System.out.println(" [6] View Available Rooms (Ready for Check-In)");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
@@ -160,13 +166,13 @@ public class FrontDeskUI {
             return;
         }
 
-        System.out.printf("%-14s | %-15s | %-22s%n",
-                "Room Number", "Room Type", "Status");
+        System.out.printf("%-14s | %-15s | %-22s | %-10s%n",
+                "Room Number", "Room Type", "Clean Status", "Occupancy");
         UIUtils.printSectionLine();
         for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
             Room r = rooms.getEntry(i);
-            System.out.printf("%-14s | %-15s | %-22s%n",
-                    r.getRoomNumber(), r.getRoomType(), r.getCleanlinessStatus());
+            System.out.printf("%-14s | %-15s | %-22s | %-10s%n",
+                    r.getRoomNumber(), r.getRoomType(), r.getCleanlinessStatus(), r.getOccupancyStatus());
         }
         UIUtils.printSectionLine();
         System.out.println("Total Available: " + rooms.getNumberOfEntries());
@@ -174,22 +180,22 @@ public class FrontDeskUI {
 
     private void handleBillingReport() {
         UIUtils.clearScreen();
-        UIUtils.printHeader("OUTSTANDING BILLING REPORT");
+        UIUtils.printHeader("GUEST BILLING REPORT");
 
-        System.out.print("Minimum outstanding balance (RM): ");
-        double minBalance = readDouble();
+        System.out.print("Minimum billing amount (RM): ");
+        double minAmount = readDouble();
 
-        System.out.print("Filter by Loyalty Tier (Platinum/Diamond/Elite/NONE), or press Enter for ALL: ");
-        String tierFilter = scanner.nextLine().trim();
-        if (tierFilter.isEmpty()) tierFilter = "ALL";
+        System.out.print("Filter by Room Type (Standard/Deluxe/Suite), or press Enter for ALL: ");
+        String roomTypeFilter = scanner.nextLine().trim();
+        if (roomTypeFilter.isEmpty()) roomTypeFilter = "ALL";
 
-        ListInterface<Guest> report = service.generateOutstandingBillingReport(minBalance, tierFilter);
+        ListInterface<BillingRecord> report = service.generateGuestBillingReport(minAmount, roomTypeFilter);
         System.out.println();
-        String title = "BILLING >= RM " + minBalance
-                + (tierFilter.equalsIgnoreCase("ALL") ? "" : " - Tier: " + tierFilter)
+        String title = "BILLING >= RM " + minAmount
+                + (roomTypeFilter.equalsIgnoreCase("ALL") ? "" : " - Room Type: " + roomTypeFilter)
                 + " (highest first)";
         UIUtils.printHeader(title);
-        printGuestTable(report);
+        printBillingTable(report);
     }
 
     private void printGuestTable(ListInterface<Guest> guests) {
@@ -220,6 +226,32 @@ public class FrontDeskUI {
         System.out.println("Room Type       : " + service.getRoomType(g.getRoomNo()));
         System.out.printf("Billing Amount  : RM %.2f%n", g.getBillingAmount());
         UIUtils.printSectionLine();
+    }
+
+    private void printBillingTable(ListInterface<BillingRecord> bills) {
+        if (bills.isEmpty()) {
+            System.out.println("No matching billing records found.");
+            return;
+        }
+
+        System.out.printf("%-7s | %-7s | %-14s | %-16s | %-6s | %-10s | %-6s | %10s | %-6s%n",
+                "Bill", "Booking", "Confirmation", "Guest", "Room", "Room Type", "Nights", "Amount", "Status");
+        UIUtils.printSectionLine();
+        for (int i = 1; i <= bills.getNumberOfEntries(); i++) {
+            BillingRecord bill = bills.getEntry(i);
+            System.out.printf("%-7s | %-7s | %-14s | %-16s | %-6s | %-10s | %-6d | %10.2f | %-6s%n",
+                    bill.getBillId(),
+                    bill.getBookingId(),
+                    bill.getConfirmationNo(),
+                    service.getGuestName(bill.getConfirmationNo()),
+                    bill.getRoomNumber(),
+                    bill.getRoomType(),
+                    bill.getNights(),
+                    bill.getAmount(),
+                    bill.getPaymentStatus());
+        }
+        UIUtils.printSectionLine();
+        System.out.println("Total Billing Records: " + bills.getNumberOfEntries());
     }
 
     private Integer readIntOption(int min, int max) {

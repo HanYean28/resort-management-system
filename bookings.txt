@@ -1,0 +1,3 @@
+# bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt
+B0001|20260706|Walk-In|Suite|2026-08-16|2026-08-18|Checked Out|103|2026-08-16 12:23:00
+B0002|20260706|Walk-In|Deluxe|2026-08-16|2026-08-17|Checked Out|101|2026-08-16 12:43:53
