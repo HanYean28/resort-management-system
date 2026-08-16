@@ -44,7 +44,8 @@ public class mainmenu {
                     new BookingUI(scanner).start();
                     break;
                 case 3:
-                    new VIPRoomAllocationUI().start();
+                    System.out.println("\nCXO: This feature is currently unavailable. Please check back later.");
+                    UIUtils.pressEnterToContinue(scanner);
                     break;
                 case 4:
                     new FrontDeskUI(scanner).start();
