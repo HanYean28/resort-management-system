@@ -1,1 +1,1 @@
-# river-water-quality-prediction
+# resort-management-system
