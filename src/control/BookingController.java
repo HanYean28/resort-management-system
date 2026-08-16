@@ -232,6 +232,54 @@ public class BookingController {
         return results;
     }
 
+    public ListInterface<BookingRequest> generateBookingReport(String bookingTypeFilter,
+            String roomTypeFilter, String statusFilter) {
+        ListInterface<BookingRequest> results = new ArrayList<>();
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            boolean matchesBookingType = bookingTypeFilter.equals(FILTER_ALL)
+                    || booking.getBookingType().equalsIgnoreCase(bookingTypeFilter);
+            boolean matchesRoomType = roomTypeFilter.equals(FILTER_ALL)
+                    || booking.getRequestedRoomType().equalsIgnoreCase(roomTypeFilter);
+            boolean matchesStatus = statusFilter.equals(FILTER_ALL)
+                    || booking.getStatus().equalsIgnoreCase(statusFilter);
+
+            if (matchesBookingType && matchesRoomType && matchesStatus) {
+                results.add(booking);
+            }
+        }
+
+        insertionSortBookingsByStatusThenDate(results);
+        return results;
+    }
+
+    public ListInterface<RoomTypeDemandRow> generateRoomTypeDemandReport(String bookingTypeFilter) {
+        ListInterface<RoomTypeDemandRow> rows = new ArrayList<>();
+        rows.add(new RoomTypeDemandRow("Standard", countRoomTypeRequests("Standard", bookingTypeFilter)));
+        rows.add(new RoomTypeDemandRow("Deluxe", countRoomTypeRequests("Deluxe", bookingTypeFilter)));
+        rows.add(new RoomTypeDemandRow("Suite", countRoomTypeRequests("Suite", bookingTypeFilter)));
+        insertionSortDemandRowsByRequests(rows);
+        return rows;
+    }
+
+    public int countBookingsByStatus(ListInterface<BookingRequest> bookingList, String status) {
+        int count = 0;
+        for (int i = 1; i <= bookingList.getNumberOfEntries(); i++) {
+            if (bookingList.getEntry(i).getStatus().equals(status)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int getTotalDemandRequests(ListInterface<RoomTypeDemandRow> rows) {
+        int total = 0;
+        for (int i = 1; i <= rows.getNumberOfEntries(); i++) {
+            total += rows.getEntry(i).getRequests();
+        }
+        return total;
+    }
+
     public int getPendingQueueSize() {
         return pendingQueue.size();
     }
@@ -370,6 +418,75 @@ public class BookingController {
             return STATUS_CHECKED_IN;
         }
         return status;
+    }
+
+    private int countRoomTypeRequests(String roomType, String bookingTypeFilter) {
+        int count = 0;
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            boolean matchesBookingType = bookingTypeFilter.equals(FILTER_ALL)
+                    || booking.getBookingType().equalsIgnoreCase(bookingTypeFilter);
+            if (matchesBookingType && booking.getRequestedRoomType().equalsIgnoreCase(roomType)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private void insertionSortBookingsByStatusThenDate(ListInterface<BookingRequest> list) {
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
+            BookingRequest key = list.getEntry(i);
+            int j = i - 1;
+            while (j >= 1 && compareBookingsByStatusThenDate(list.getEntry(j), key) > 0) {
+                list.replace(j + 1, list.getEntry(j));
+                j--;
+            }
+            list.replace(j + 1, key);
+        }
+    }
+
+    private int compareBookingsByStatusThenDate(BookingRequest left, BookingRequest right) {
+        int statusCompare = getStatusOrder(left.getStatus()) - getStatusOrder(right.getStatus());
+        if (statusCompare != 0) {
+            return statusCompare;
+        }
+
+        int dateCompare = left.getCheckInDate().compareTo(right.getCheckInDate());
+        if (dateCompare != 0) {
+            return dateCompare;
+        }
+        return left.getBookingId().compareToIgnoreCase(right.getBookingId());
+    }
+
+    private int getStatusOrder(String status) {
+        if (status.equals(STATUS_PENDING)) {
+            return 1;
+        }
+        if (status.equals(STATUS_ASSIGNED)) {
+            return 2;
+        }
+        if (status.equals(STATUS_CHECKED_IN)) {
+            return 3;
+        }
+        if (status.equals(STATUS_CHECKED_OUT)) {
+            return 4;
+        }
+        if (status.equals(STATUS_CANCELLED)) {
+            return 5;
+        }
+        return 6;
+    }
+
+    private void insertionSortDemandRowsByRequests(ListInterface<RoomTypeDemandRow> list) {
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
+            RoomTypeDemandRow key = list.getEntry(i);
+            int j = i - 1;
+            while (j >= 1 && list.getEntry(j).getRequests() < key.getRequests()) {
+                list.replace(j + 1, list.getEntry(j));
+                j--;
+            }
+            list.replace(j + 1, key);
+        }
     }
 
     private void saveRoomsToFile(ListInterface<Room> rooms) {
@@ -564,5 +681,23 @@ public class BookingController {
 
     private String getCurrentTimestamp() {
         return LocalDateTime.now().format(TIMESTAMP_FORMAT);
+    }
+
+    public static class RoomTypeDemandRow {
+        private String roomType;
+        private int requests;
+
+        public RoomTypeDemandRow(String roomType, int requests) {
+            this.roomType = roomType;
+            this.requests = requests;
+        }
+
+        public String getRoomType() {
+            return roomType;
+        }
+
+        public int getRequests() {
+            return requests;
+        }
     }
 }

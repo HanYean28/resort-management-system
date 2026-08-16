@@ -33,9 +33,10 @@ public class BookingUI {
             System.out.println(" [6] Check In Booking");
             System.out.println(" [7] Check Out Booking");
             System.out.println(" [8] Cancel Booking");
+            System.out.println(" [9] Generate Reports");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-8): ");
+            System.out.print("Please enter choice (0-9): ");
 
             if (scanner.hasNextInt()) {
                 choice = scanner.nextInt();
@@ -71,6 +72,9 @@ public class BookingUI {
                     break;
                 case 8:
                     handleCancelBooking();
+                    break;
+                case 9:
+                    handleReports();
                     break;
                 case 0:
                     UIUtils.clearScreen();
@@ -191,6 +195,128 @@ public class BookingUI {
         }
     }
 
+    private void handleReports() {
+        int choice = -1;
+        while (choice != 0) {
+            UIUtils.clearScreen();
+            UIUtils.printHeader("BOOKING REPORTS");
+            System.out.println(" [1] Report 1: Booking Report");
+            System.out.println(" [2] Report 2: Room Type Demand Report");
+            System.out.println(" [0] Back to Booking Menu");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-2): ");
+
+            Integer selected = readIntOption(0, 2);
+            if (selected == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 2.");
+                UIUtils.pressEnterToContinue(scanner);
+                continue;
+            }
+            choice = selected;
+
+            switch (choice) {
+                case 1:
+                    handleBookingReport();
+                    UIUtils.pressEnterToContinue(scanner);
+                    break;
+                case 2:
+                    handleRoomTypeDemandReport();
+                    UIUtils.pressEnterToContinue(scanner);
+                    break;
+                case 0:
+                    break;
+                default:
+                    System.out.println("Invalid choice. Try again.");
+                    UIUtils.pressEnterToContinue(scanner);
+            }
+        }
+    }
+
+    private void handleBookingReport() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 1: BOOKING REPORT");
+
+        String bookingTypeFilter = promptBookingTypeFilter();
+        if (bookingTypeFilter == null) {
+            System.out.println("\nReport cancelled.");
+            return;
+        }
+        String roomTypeFilter = promptRoomTypeFilter();
+        if (roomTypeFilter == null) {
+            System.out.println("\nReport cancelled.");
+            return;
+        }
+        String statusFilter = promptStatusFilter();
+        if (statusFilter == null) {
+            System.out.println("\nReport cancelled.");
+            return;
+        }
+
+        ListInterface<BookingRequest> reportBookings = controller.generateBookingReport(
+                bookingTypeFilter, roomTypeFilter, statusFilter);
+
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 1: BOOKING REPORT");
+        System.out.println("Booking Type Filter : " + formatFilter(bookingTypeFilter));
+        System.out.println("Room Type Filter    : " + formatFilter(roomTypeFilter));
+        System.out.println("Status Filter       : " + formatFilter(statusFilter));
+        UIUtils.printSectionLine();
+        if (statusFilter.equals(BookingController.FILTER_ALL)) {
+            System.out.println("Pending      : "
+                    + controller.countBookingsByStatus(reportBookings, BookingController.STATUS_PENDING));
+            System.out.println("Assigned     : "
+                    + controller.countBookingsByStatus(reportBookings, BookingController.STATUS_ASSIGNED));
+            System.out.println("Checked In   : "
+                    + controller.countBookingsByStatus(reportBookings, BookingController.STATUS_CHECKED_IN));
+            System.out.println("Checked Out  : "
+                    + controller.countBookingsByStatus(reportBookings, BookingController.STATUS_CHECKED_OUT));
+            System.out.println("Cancelled    : "
+                    + controller.countBookingsByStatus(reportBookings, BookingController.STATUS_CANCELLED));
+            System.out.println("Total Matched: " + reportBookings.getNumberOfEntries());
+            UIUtils.printSectionLine();
+        } else {
+            System.out.println("Matched Bookings: " + reportBookings.getNumberOfEntries());
+            UIUtils.printSectionLine();
+        }
+        displayBookingTable(reportBookings, false);
+    }
+
+    private void handleRoomTypeDemandReport() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 2: ROOM TYPE DEMAND REPORT");
+
+        String bookingTypeFilter = promptBookingTypeFilter();
+        if (bookingTypeFilter == null) {
+            System.out.println("\nReport cancelled.");
+            return;
+        }
+
+        ListInterface<BookingController.RoomTypeDemandRow> rows =
+                controller.generateRoomTypeDemandReport(bookingTypeFilter);
+        int totalRequests = controller.getTotalDemandRequests(rows);
+
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 2: ROOM TYPE DEMAND REPORT");
+        System.out.println("Booking Type Filter : " + formatFilter(bookingTypeFilter));
+        UIUtils.printSectionLine();
+        if (totalRequests == 0) {
+            System.out.println("No booking requests found.");
+            return;
+        }
+
+        System.out.printf("%-10s | %-8s | %-10s%n", "Room Type", "Requests", "Percentage");
+        UIUtils.printSectionLine();
+        for (int i = 1; i <= rows.getNumberOfEntries(); i++) {
+            BookingController.RoomTypeDemandRow row = rows.getEntry(i);
+            double percentage = (row.getRequests() * 100.0) / totalRequests;
+            System.out.printf("%-10s | %-8d | %9.2f%%%n",
+                    row.getRoomType(), row.getRequests(), percentage);
+        }
+        UIUtils.printSectionLine();
+        System.out.println("Most Requested Room Type: " + rows.getEntry(1).getRoomType());
+        System.out.println("Total Booking Requests  : " + totalRequests);
+    }
+
     private void handleCheckInBooking() {
         UIUtils.clearScreen();
         UIUtils.printHeader("CHECK IN BOOKING");
@@ -305,6 +431,66 @@ public class BookingUI {
         }
     }
 
+    private String promptRoomTypeFilter() {
+        while (true) {
+            System.out.println("\nFilter by room type:");
+            System.out.println(" [1] All Room Types");
+            System.out.println(" [2] Standard");
+            System.out.println(" [3] Deluxe");
+            System.out.println(" [4] Suite");
+            System.out.println(" [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-4): ");
+
+            Integer choice = readIntOption(0, 4);
+            if (choice == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 4.");
+                continue;
+            }
+            if (choice == 0) {
+                return null;
+            }
+            if (choice == 1) {
+                return BookingController.FILTER_ALL;
+            }
+            if (choice == 2) {
+                return "Standard";
+            }
+            if (choice == 3) {
+                return "Deluxe";
+            }
+            return "Suite";
+        }
+    }
+
+    private String promptBookingTypeFilter() {
+        while (true) {
+            System.out.println("Filter by booking type:");
+            System.out.println(" [1] All Booking Types");
+            System.out.println(" [2] Walk-In");
+            System.out.println(" [3] Standard");
+            System.out.println(" [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-3): ");
+
+            Integer choice = readIntOption(0, 3);
+            if (choice == null) {
+                System.out.println("\nInvalid choice! Please enter a number between 0 and 3.");
+                continue;
+            }
+            if (choice == 0) {
+                return null;
+            }
+            if (choice == 1) {
+                return BookingController.FILTER_ALL;
+            }
+            if (choice == 2) {
+                return BookingController.TYPE_WALK_IN;
+            }
+            return BookingController.TYPE_STANDARD;
+        }
+    }
+
     private String promptDate(String prompt) {
         while (true) {
             System.out.print(prompt);
@@ -353,6 +539,10 @@ public class BookingUI {
     }
 
     private void displayBookingTable(ListInterface<BookingRequest> bookings) {
+        displayBookingTable(bookings, true);
+    }
+
+    private void displayBookingTable(ListInterface<BookingRequest> bookings, boolean showTotal) {
         if (bookings.isEmpty()) {
             System.out.println("No booking records found.");
             return;
@@ -374,7 +564,9 @@ public class BookingUI {
                     booking.getAssignedRoomNumber());
         }
         UIUtils.printSectionLine();
-        System.out.println("Total Bookings: " + bookings.getNumberOfEntries());
+        if (showTotal) {
+            System.out.println("Total Bookings: " + bookings.getNumberOfEntries());
+        }
     }
 
     private void printBookingDetail(BookingRequest booking) {
@@ -387,6 +579,13 @@ public class BookingUI {
         System.out.println("Status          : " + booking.getStatus());
         System.out.println("Assigned Room   : " + booking.getAssignedRoomNumber());
         UIUtils.printSectionLine();
+    }
+
+    private String formatFilter(String value) {
+        if (value.equals(BookingController.FILTER_ALL)) {
+            return "ALL";
+        }
+        return value;
     }
 
     private Integer readIntOption(int min, int max) {
