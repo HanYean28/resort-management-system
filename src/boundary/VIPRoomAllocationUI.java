@@ -2,10 +2,9 @@ package boundary;
 
 import control.VIPRoomAllocation;
 import entity.Guest;
-import entity.Room;
-import java.util.Scanner;
+import java.util.scanner;
 
-public class VIPRoomAllocationUI {
+pubic class VIPRoomAllocationUI {
 
     private Scanner scanner;
     private VIPRoomAllocation controller;
@@ -89,19 +88,6 @@ public class VIPRoomAllocationUI {
         displayGuestDetails(guest);
     }
 
-    private void findGuest(){
-        System.out.print("Enter Confirmation Number: ");
-        String confirmationNo = scanner.next();
-        scanner.nextLine();
-
-        Guest guest = controller.findGuest(confirmationNo);
-        if (guest == null) {
-            System.out.println("Guest not found.");
-        } else {
-            displayGuestDetails(guest);
-        }
-    }
-
     //Display all guest in priority order
     private void displayWaitingList(){
         Guest[] guests = controller.getWaitingList();
@@ -148,12 +134,12 @@ public class VIPRoomAllocationUI {
         int roomChoice = scanner.nextInt();
         scanner.nextLine();
 
-        if(roomChoice < 1 || roomChoice > availableRooms.length){
+        if(selection < 1 || selection > availableRooms.length){
             System.out.println("Invalid room selection.");
             return;
         }
 
-        String selectedRoomNumber = availableRooms[roomChoice - 1].getRoomNumber();
+        String selectedRoomNumber = availableRooms[selection - 1].getRoomNumber();
 
         Guest guest = controller.allocateRoom(selectedRoomNumber);
 
@@ -171,8 +157,8 @@ public class VIPRoomAllocationUI {
     }
 
     private void removeGuest(){
-        System.out.println("Remove Guest");
-        System.out.println("Confirmation Number: ");
+        System.out.println("Remove Guest")
+        System.out.println("Confrimation Number: ");
         String confirmationNo = scanner.nextLine();
 
         boolean success = controller.removeGuest(confirmationNo);

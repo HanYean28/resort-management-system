@@ -38,16 +38,15 @@ public class mainmenu {
 
             switch (choice) {
                 case 1:
-                    new HousekeepingUI(scanner).start();
+                    new HousekeepingUI().start();
                     break;
                 case 2:
-                    new BookingUI(scanner).start();
-                    break;
                 case 3:
                     new VIPRoomAllocationUI().start();
                     break;
                 case 4:
-                    new FrontDeskUI(scanner).start();
+                    new FrontDeskUI().start();
+                    UIUtils.pressEnterToContinue(scanner);
                     break;
                 case 0:
                     System.out.println("Exiting the system. Goodbye!");

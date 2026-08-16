@@ -13,7 +13,7 @@ public class VIPRoomAllocation {
     public VIPRoomAllocation() {
         vipQueue = new ArrayPriorityQueue<>();
         arrivalOrder = 0;
-        rooms = new Room[0];
+        this.rooms = rooms;
     }
 
     public void addVIPGuest(Guest guest){
@@ -25,23 +25,18 @@ public class VIPRoomAllocation {
         vipQueue.add(guest);
     }
 
-    public Guest getNextVIPGuest(){
-        return vipQueue.peek();
-    }
-
     //Return all available rooms
     public Room[] getAvailableRooms(){
         int count = 0;
         for(Room room : rooms){
-            if(room != null && room.getCleanlinessStatus().equals("Ready")){
+            if(room.getCleanlinessStatus().equals("Ready") && room != null){
                 count++;
             }
         }
         Room[] availableRooms = new Room[count];
-        int index = 0;
-        for (Room room : rooms){
-            if(room != null && room.getCleanlinessStatus().equals("Ready")){
-                availableRooms[index++] = room;
+        for (Room rooms : rooms){
+            if(rooms.getCleanlinessStatus().equals("Ready") && rooms != null){
+                availableRooms[index++] = rooms;
             }
         }
         return availableRooms;
@@ -56,22 +51,21 @@ public class VIPRoomAllocation {
             return null;
         }
 
-        Room selectedRoom = findAvailableRoom(roomNumber);
         if(selectedRoom == null){
             return null;
         }
-        guest = vipQueue.remove();
+        Guest guest = vipQueue.remove();
         guest.setRoomNo(selectedRoom.getRoomNumber());
-        selectedRoom.setOccupancyStatus("Occupied");
+        selectedRoom.setCleanlinessStatus("Occupied");
         return guest;
     }
 
     //Find guest using confirmation number
-    public Guest findGuest(String confirmationNo){
-        Guest[] guests = getWaitingList();
+    public Guest findGuest(string confirmationNo){
+        Guest[] guest = getWaitingList();
 
         for (Guest guest : guests){
-            if (guest.getConfirmationNo().equals(confirmationNo)){
+            if (geust.getConfirmationNo().equals(confirmationNo)){
                 return guest;
             }
         }
@@ -93,7 +87,7 @@ public class VIPRoomAllocation {
 
     //remove guest from priority queue
     public boolean removeGuest(String confirmationNo){
-        Guest[] guests = getWaitingList();
+        Guest[] guests = getWatingList();
 
         boolean found = false;
         ArrayPriorityQueue<Guest> newQueue = new ArrayPriorityQueue<>();
@@ -132,10 +126,6 @@ public class VIPRoomAllocation {
     }
 
     public boolean isWaitingListEmpty(){
-        return vipQueue.isEmpty();
-    }
-
-    public boolean isQueueEmpty(){
         return vipQueue.isEmpty();
     }
 }

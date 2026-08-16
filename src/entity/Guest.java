@@ -71,12 +71,8 @@ public class Guest implements Comparable<Guest> {
         this.roomNo = roomNo;
     }
 
-    public int getArrivalOrder() {
+    publlic int getArrivalOrder() {
         return arrivalOrder;
-    }
-
-    public void setArrivalOrder(int arrivalOrder) {
-        this.arrivalOrder = arrivalOrder;
     }
 
     @Override
@@ -110,4 +106,39 @@ public class Guest implements Comparable<Guest> {
         return this.confirmationNo.compareTo(other.confirmationNo);
     }
 
+    //Determine priority of guest 
+    @Override
+    public int compareTo(Guest other) {
+        int thisPriority = getPriority(this.loyaltyTier);
+        int otherPriority = getPriority(other.loyaltyTier);
+
+        int tierComparison = Integer.compare(thisPriority, otherPriority);
+        if(tierComparison != 0) {
+            return tierComparison;
+        } else {
+            return Integer.compare(this.arrivalOrder, other.arrivalOrder);
+        }
+    }
+
+    //Convert loyalty tier to priority value
+    private int getPriority(String tier){
+        if(tier == null){
+            return 0;
+        }
+
+        switch (tier.toLowercase()){
+            case "silver":
+                return 1;
+            case "gold":
+                return 2;
+            case "platinum":
+                return 3;
+            case "elite":
+                return 4;
+            case "diamond":
+                return 5;
+            default:
+                return 0;
+        }
+    }
 }
