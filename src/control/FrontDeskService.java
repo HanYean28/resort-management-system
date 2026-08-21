@@ -4,6 +4,7 @@ import adt.ArrayList;
 import adt.BinarySearchTree;
 import adt.BinarySearchTreeInterface;
 import adt.ListInterface;
+import entity.BillingRecord;
 import entity.Guest;
 import entity.Room;
 import java.io.BufferedReader;
@@ -25,6 +26,7 @@ import java.util.Iterator;
 public class FrontDeskService {
     private static final String DATA_FILE = "guests.txt";
     private static final String ROOMS_FILE = "rooms.txt";
+    private static final String BILLING_FILE = "billing.txt";
 
     private BinarySearchTreeInterface<Guest> guestTree;
 
@@ -113,6 +115,18 @@ public class FrontDeskService {
         return removed;
     }
 
+    public boolean updateGuestRoom(String confirmationNo, String roomNo) {
+        Guest guest = searchByConfirmationNumber(confirmationNo);
+        if (guest == null) {
+            return false;
+        }
+
+        guest.setRoomNo(roomNo);
+        guestTree.add(guest);
+        saveGuestsToFile();
+        return true;
+    }
+
     /** Builds a placeholder Guest used only as a search key (equals/compareTo use confirmationNo only). */
     private Guest searchKey(String confirmationNo) {
         return new Guest(confirmationNo, null, null, null, 0.0, null);
@@ -142,7 +156,8 @@ public class FrontDeskService {
 
         for (int i = 1; i <= allRooms.getNumberOfEntries(); i++) {
             Room room = allRooms.getEntry(i);
-            if (room.getCleanlinessStatus().equalsIgnoreCase("Ready")) {
+            if (room.getCleanlinessStatus().equalsIgnoreCase("Ready")
+                    && room.getOccupancyStatus().equalsIgnoreCase("Vacant")) {
                 available.add(room);
             }
         }
@@ -160,7 +175,9 @@ public class FrontDeskService {
                     continue;
                 }
                 String[] parts = line.split("\\|");
-                if (parts.length >= 6) {
+                if (parts.length >= 7) {
+                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]));
+                } else if (parts.length >= 6) {
                     rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]));
                 } else if (parts.length == 4) {
                     rooms.add(new Room(parts[0], parts[1], parts[2], parts[3]));
@@ -237,55 +254,78 @@ public class FrontDeskService {
         }
     }
 
-    // Filters by TWO criteria: (1) billing amount >= minBalance AND (2) loyalty
-    // tier (pass "ALL" to skip this second filter), then quicksorts the
-    // filtered results by billing amount, descending (highest debt first).
+    public ListInterface<BillingRecord> generateGuestBillingReport(double minAmount, String roomTypeFilter) {
+        ListInterface<BillingRecord> allBills = loadBillingFromFile();
+        ListInterface<BillingRecord> filtered = new ArrayList<>();
 
-    public ListInterface<Guest> generateOutstandingBillingReport(double minBalance, String loyaltyTierFilter) {
-        ListInterface<Guest> allGuests = getAllGuestsSorted();
-        ListInterface<Guest> filtered = new ArrayList<>();
-        boolean filterByTier = loyaltyTierFilter != null && !loyaltyTierFilter.equalsIgnoreCase("ALL");
+        for (int i = 1; i <= allBills.getNumberOfEntries(); i++) {
+            BillingRecord bill = allBills.getEntry(i);
+            boolean matchesAmount = bill.getAmount() >= minAmount;
+            boolean matchesRoomType = roomTypeFilter.equalsIgnoreCase("ALL")
+                    || bill.getRoomType().equalsIgnoreCase(roomTypeFilter);
 
-        for (int i = 1; i <= allGuests.getNumberOfEntries(); i++) {
-            Guest g = allGuests.getEntry(i);
-            boolean matchesBalance = g.getBillingAmount() >= minBalance;
-            boolean matchesTier = !filterByTier
-                    || (g.getLoyaltyTier() != null && g.getLoyaltyTier().equalsIgnoreCase(loyaltyTierFilter));
-
-            if (matchesBalance && matchesTier) {
-                filtered.add(g);
+            if (matchesAmount && matchesRoomType) {
+                filtered.add(bill);
             }
         }
 
-        if (!filtered.isEmpty()) {
-            quickSortByBillingDescending(filtered, 1, filtered.getNumberOfEntries());
-        }
+        quickSortBillsByAmountDescending(filtered, 1, filtered.getNumberOfEntries());
         return filtered;
     }
 
-    private void quickSortByBillingDescending(ListInterface<Guest> list, int low, int high) {
+    public String getGuestName(String confirmationNo) {
+        Guest guest = searchByConfirmationNumber(confirmationNo);
+        if (guest == null) {
+            return "N/A";
+        }
+        return guest.getName();
+    }
+
+    private ListInterface<BillingRecord> loadBillingFromFile() {
+        ListInterface<BillingRecord> bills = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(BILLING_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+                if (parts.length >= 11) {
+                    bills.add(new BillingRecord(parts[0], parts[1], parts[2], parts[3], parts[4],
+                            parts[5], parts[6], Integer.parseInt(parts[7]), Double.parseDouble(parts[8]),
+                            parts[9], parts[10]));
+                }
+            }
+        } catch (IOException e) {
+            // If file doesn't exist, return empty billing list.
+        }
+        return bills;
+    }
+
+    private void quickSortBillsByAmountDescending(ListInterface<BillingRecord> list, int low, int high) {
         if (low < high) {
-            int pivotIndex = partition(list, low, high);
-            quickSortByBillingDescending(list, low, pivotIndex - 1);
-            quickSortByBillingDescending(list, pivotIndex + 1, high);
+            int pivotIndex = partitionBills(list, low, high);
+            quickSortBillsByAmountDescending(list, low, pivotIndex - 1);
+            quickSortBillsByAmountDescending(list, pivotIndex + 1, high);
         }
     }
 
-    private int partition(ListInterface<Guest> list, int low, int high) {
-        double pivot = list.getEntry(high).getBillingAmount();
+    private int partitionBills(ListInterface<BillingRecord> list, int low, int high) {
+        double pivot = list.getEntry(high).getAmount();
         int i = low - 1;
         for (int j = low; j < high; j++) {
-            if (list.getEntry(j).getBillingAmount() > pivot) { // descending order
+            if (list.getEntry(j).getAmount() > pivot) {
                 i++;
-                swap(list, i, j);
+                swapBills(list, i, j);
             }
         }
-        swap(list, i + 1, high);
+        swapBills(list, i + 1, high);
         return i + 1;
     }
 
-    private void swap(ListInterface<Guest> list, int posA, int posB) {
-        Guest temp = list.getEntry(posA);
+    private void swapBills(ListInterface<BillingRecord> list, int posA, int posB) {
+        BillingRecord temp = list.getEntry(posA);
         list.replace(posA, list.getEntry(posB));
         list.replace(posB, temp);
     }

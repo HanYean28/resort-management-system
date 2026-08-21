@@ -9,19 +9,26 @@ public class Room implements Serializable {
     private String roomNumber;
     private String roomType;
     private String cleanlinessStatus; // "Dirty", "Cleaning In Progress", "Inspected", "Ready"
+    private String occupancyStatus; // "Vacant", "Occupied"
     private String lastUpdate;
     private String dirtySince;
     private String lastTurnaroundMinutes;
 
     public Room(String roomNumber, String roomType, String cleanlinessStatus, String lastUpdate) {
-        this(roomNumber, roomType, cleanlinessStatus, lastUpdate, "N/A", "N/A");
+        this(roomNumber, roomType, cleanlinessStatus, "Vacant", lastUpdate, "N/A", "N/A");
     }
 
     public Room(String roomNumber, String roomType, String cleanlinessStatus, String lastUpdate,
             String dirtySince, String lastTurnaroundMinutes) {
+        this(roomNumber, roomType, cleanlinessStatus, "Vacant", lastUpdate, dirtySince, lastTurnaroundMinutes);
+    }
+
+    public Room(String roomNumber, String roomType, String cleanlinessStatus, String occupancyStatus,
+            String lastUpdate, String dirtySince, String lastTurnaroundMinutes) {
         this.roomNumber = roomNumber;
         this.roomType = roomType;
         this.cleanlinessStatus = cleanlinessStatus;
+        this.occupancyStatus = occupancyStatus;
         this.lastUpdate = lastUpdate;
         this.dirtySince = dirtySince;
         this.lastTurnaroundMinutes = lastTurnaroundMinutes;
@@ -51,6 +58,14 @@ public class Room implements Serializable {
         this.cleanlinessStatus = cleanlinessStatus;
     }
 
+    public String getOccupancyStatus() {
+        return occupancyStatus;
+    }
+
+    public void setOccupancyStatus(String occupancyStatus) {
+        this.occupancyStatus = occupancyStatus;
+    }
+
     public String getLastUpdate() {
         return lastUpdate;
     }
@@ -77,7 +92,7 @@ public class Room implements Serializable {
 
     @Override
     public String toString() {
-        return String.format("Room %-6s | Type: %-12s | Status: %-20s | Last Update: %s",
-                roomNumber, roomType, cleanlinessStatus, lastUpdate);
+        return String.format("Room %-6s | Type: %-12s | Clean: %-20s | Occupancy: %-10s | Last Update: %s",
+                roomNumber, roomType, cleanlinessStatus, occupancyStatus, lastUpdate);
     }
 }

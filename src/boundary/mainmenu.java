@@ -38,7 +38,7 @@ public class mainmenu {
 
             switch (choice) {
                 case 1:
-                    new HousekeepingUI(scanner).start();
+                    new HousekeepingUI().start();
                     break;
                 case 2:
                 case 3:
