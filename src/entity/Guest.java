@@ -21,6 +21,7 @@ public class Guest implements Comparable<Guest> {
         this.loyaltyTier = loyaltyTier;
         this.billingAmount = billingAmount;
         this.roomNo = roomNo;
+        this.arrivalOrder = 0; 
     }
 
     public String getConfirmationNo() {
@@ -71,8 +72,12 @@ public class Guest implements Comparable<Guest> {
         this.roomNo = roomNo;
     }
 
-    publlic int getArrivalOrder() {
+    public int getArrivalOrder() {
         return arrivalOrder;
+    }
+
+    public void setArrivalOrder(int arrivalOrder){
+        this.arrivalOrder = arrivalOrder;
     }
 
     @Override
@@ -101,10 +106,6 @@ public class Guest implements Comparable<Guest> {
         return confirmationNo != null ? confirmationNo.hashCode() : 0;
     }
 
-    @Override
-    public int compareTo(Guest other) {
-        return this.confirmationNo.compareTo(other.confirmationNo);
-    }
 
     //Determine priority of guest 
     @Override
@@ -120,25 +121,26 @@ public class Guest implements Comparable<Guest> {
         }
     }
 
-    //Convert loyalty tier to priority value
-    private int getPriority(String tier){
-        if(tier == null){
-            return 0;
+    private int getPriority(String loyaltyTier){
+        if(loyaltyTier == null){
+            return 0; 
         }
-
-        switch (tier.toLowercase()){
-            case "silver":
-                return 1;
-            case "gold":
-                return 2;
-            case "platinum":
-                return 3;
-            case "elite":
-                return 4;
+        switch(loyaltyTier.toLowerCase()){
             case "diamond":
                 return 5;
+            case "elite":
+                return 4;
+            case "platinum":
+                return 3;
+            case "gold":
+                return 2;
+            case "silver":
+                return 1;
             default:
-                return 0;
+                return 0; // Default priority for unrecognized loyalty tiers
         }
     }
+
+
+    
 }
