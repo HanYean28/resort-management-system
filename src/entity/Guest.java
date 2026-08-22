@@ -1,9 +1,10 @@
 package entity;
+import java.io.Serializable;
 
 /**
  * @author Lim How Voon
  */
-public class Guest implements Comparable<Guest> {
+public class Guest implements Serializable {
 
     private String confirmationNo;
     private String name;
@@ -11,7 +12,6 @@ public class Guest implements Comparable<Guest> {
     private String loyaltyTier;
     private double billingAmount;
     private String roomNo;
-    private int arrivalOrder; // New attribute to track the order of arrival
 
     public Guest(String confirmationNo, String name, String phone, String loyaltyTier, double billingAmount,
             String roomNo) {
@@ -21,7 +21,6 @@ public class Guest implements Comparable<Guest> {
         this.loyaltyTier = loyaltyTier;
         this.billingAmount = billingAmount;
         this.roomNo = roomNo;
-        this.arrivalOrder = 0; 
     }
 
     public String getConfirmationNo() {
@@ -72,13 +71,6 @@ public class Guest implements Comparable<Guest> {
         this.roomNo = roomNo;
     }
 
-    public int getArrivalOrder() {
-        return arrivalOrder;
-    }
-
-    public void setArrivalOrder(int arrivalOrder){
-        this.arrivalOrder = arrivalOrder;
-    }
 
     @Override
     public String toString() {
@@ -105,42 +97,5 @@ public class Guest implements Comparable<Guest> {
     public int hashCode() {
         return confirmationNo != null ? confirmationNo.hashCode() : 0;
     }
-
-
-    //Determine priority of guest 
-    @Override
-    public int compareTo(Guest other) {
-        int thisPriority = getPriority(this.loyaltyTier);
-        int otherPriority = getPriority(other.loyaltyTier);
-
-        int tierComparison = Integer.compare(thisPriority, otherPriority);
-        if(tierComparison != 0) {
-            return tierComparison;
-        } else {
-            return Integer.compare(this.arrivalOrder, other.arrivalOrder);
-        }
-    }
-
-    private int getPriority(String loyaltyTier){
-        if(loyaltyTier == null){
-            return 0; 
-        }
-        switch(loyaltyTier.toLowerCase()){
-            case "diamond":
-                return 5;
-            case "elite":
-                return 4;
-            case "platinum":
-                return 3;
-            case "gold":
-                return 2;
-            case "silver":
-                return 1;
-            default:
-                return 0; // Default priority for unrecognized loyalty tiers
-        }
-    }
-
-
     
 }
