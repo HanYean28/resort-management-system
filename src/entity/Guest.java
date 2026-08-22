@@ -4,7 +4,7 @@ import java.io.Serializable;
 /**
  * @author Lim How Voon
  */
-public class Guest implements Serializable {
+public class Guest implements Serializable, Comparable<Guest> {
 
     private String confirmationNo;
     private String name;
@@ -96,6 +96,11 @@ public class Guest implements Serializable {
     @Override
     public int hashCode() {
         return confirmationNo != null ? confirmationNo.hashCode() : 0;
+    }
+
+    @Override
+    public int compareTo(Guest other) {
+        return this.confirmationNo.compareTo(other.confirmationNo);
     }
     
 }

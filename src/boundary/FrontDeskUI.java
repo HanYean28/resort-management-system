@@ -14,11 +14,6 @@ public class FrontDeskUI {
     private FrontDeskService service;
     private Scanner scanner;
 
-    public FrontDeskUI() {
-        service = new FrontDeskService();
-        scanner = new Scanner(System.in);
-    }
-
     public FrontDeskUI(Scanner scanner) {
         service = new FrontDeskService();
         this.scanner = scanner;
