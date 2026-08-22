@@ -1,9 +1,10 @@
 package entity;
+import java.io.Serializable;
 
 /**
  * @author Lim How Voon
  */
-public class Guest implements Comparable<Guest> {
+public class Guest implements Serializable {
 
     private String confirmationNo;
     private String name;
@@ -11,7 +12,6 @@ public class Guest implements Comparable<Guest> {
     private String loyaltyTier;
     private double billingAmount;
     private String roomNo;
-    private int arrivalOrder; // New attribute to track the order of arrival
 
     public Guest(String confirmationNo, String name, String phone, String loyaltyTier, double billingAmount,
             String roomNo) {
@@ -71,9 +71,6 @@ public class Guest implements Comparable<Guest> {
         this.roomNo = roomNo;
     }
 
-    publlic int getArrivalOrder() {
-        return arrivalOrder;
-    }
 
     @Override
     public String toString() {
@@ -100,45 +97,5 @@ public class Guest implements Comparable<Guest> {
     public int hashCode() {
         return confirmationNo != null ? confirmationNo.hashCode() : 0;
     }
-
-    @Override
-    public int compareTo(Guest other) {
-        return this.confirmationNo.compareTo(other.confirmationNo);
-    }
-
-    //Determine priority of guest 
-    @Override
-    public int compareTo(Guest other) {
-        int thisPriority = getPriority(this.loyaltyTier);
-        int otherPriority = getPriority(other.loyaltyTier);
-
-        int tierComparison = Integer.compare(thisPriority, otherPriority);
-        if(tierComparison != 0) {
-            return tierComparison;
-        } else {
-            return Integer.compare(this.arrivalOrder, other.arrivalOrder);
-        }
-    }
-
-    //Convert loyalty tier to priority value
-    private int getPriority(String tier){
-        if(tier == null){
-            return 0;
-        }
-
-        switch (tier.toLowercase()){
-            case "silver":
-                return 1;
-            case "gold":
-                return 2;
-            case "platinum":
-                return 3;
-            case "elite":
-                return 4;
-            case "diamond":
-                return 5;
-            default:
-                return 0;
-        }
-    }
+    
 }
