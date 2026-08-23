@@ -115,6 +115,11 @@ public class BookingUI {
 
         System.out.print("Enter Guest Confirmation No: ");
         String confirmationNo = scanner.nextLine().trim();
+        if (controller.getGuest(confirmationNo) == null) {
+            UIUtils.printError("Guest not found. Add guest first.");
+            return;
+        }
+
         String roomType = promptRoomType();
         if (roomType == null) {
             System.out.println("\nWalk-in booking cancelled.");
@@ -142,6 +147,11 @@ public class BookingUI {
 
         System.out.print("Enter Guest Confirmation No: ");
         String confirmationNo = scanner.nextLine().trim();
+        if (controller.getGuest(confirmationNo) == null) {
+            UIUtils.printError("Guest not found. Add guest first.");
+            return;
+        }
+
         String roomType = promptRoomType();
         if (roomType == null) {
             System.out.println("\nStandard booking cancelled.");
