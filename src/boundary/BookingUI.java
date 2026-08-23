@@ -134,7 +134,13 @@ public class BookingUI {
 
         String error = controller.addWalkInRegistration(confirmationNo, roomType, checkOutDate);
         if (error == null) {
-            System.out.println("\nWalk-in booking added and room assigned successfully.");
+            BookingRequest booking = controller.getLatestBooking();
+            System.out.println();
+            if (booking != null) {
+                UIUtils.printSectionLine();
+                printBookingDetail(booking);
+            }
+            System.out.println("Walk-in booking added and room assigned successfully.");
         } else {
             UIUtils.printError(error);
         }
@@ -171,7 +177,13 @@ public class BookingUI {
 
         String error = controller.addStandardBooking(confirmationNo, roomType, checkInDate, checkOutDate);
         if (error == null) {
-            System.out.println("\nStandard booking added to pending queue.");
+            BookingRequest booking = controller.getLatestBooking();
+            System.out.println();
+            if (booking != null) {
+                UIUtils.printSectionLine();
+                printBookingDetail(booking);
+            }
+            System.out.println("Standard booking added to pending queue.");
             System.out.println("Pending Queue Size: " + controller.getPendingQueueSize());
         } else {
             UIUtils.printError(error);

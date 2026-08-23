@@ -66,6 +66,13 @@ public class BookingController {
         return frontDeskService.getAllGuestsSorted();
     }
 
+    public BookingRequest getLatestBooking() {
+        if (bookings.isEmpty()) {
+            return null;
+        }
+        return bookings.getEntry(bookings.getNumberOfEntries());
+    }
+
     public String addStandardBooking(String confirmationNo, String requestedRoomType,
             String checkInDate, String checkOutDate) {
         Guest guest = getGuest(confirmationNo);
