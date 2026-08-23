@@ -155,8 +155,9 @@ public class BookingController {
             return "Guest can only check in from check-in date until before check-out date.";
         }
 
-        if (!isRoomVacant(booking.getAssignedRoomNumber())) {
-            return "Assigned room is currently occupied.";
+        String roomAvailabilityError = validateAssignedRoomForCheckIn(booking.getAssignedRoomNumber());
+        if (roomAvailabilityError != null) {
+            return roomAvailabilityError;
         }
 
         booking.setStatus(STATUS_CHECKED_IN);
@@ -633,6 +634,24 @@ public class BookingController {
             }
         }
         return false;
+    }
+
+    private String validateAssignedRoomForCheckIn(String roomNumber) {
+        ListInterface<Room> rooms = loadRoomsFromFile();
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            Room room = rooms.getEntry(i);
+            if (room.getRoomNumber().equalsIgnoreCase(roomNumber)) {
+                if (!room.getOccupancyStatus().equalsIgnoreCase("Vacant")) {
+                    return "Assigned room is currently occupied.";
+                }
+                if (!room.getCleanlinessStatus().equalsIgnoreCase("Ready")) {
+                    return "Assigned room is not ready for check-in. Current cleaning status: "
+                            + room.getCleanlinessStatus() + ".";
+                }
+                return null;
+            }
+        }
+        return "Assigned room record was not found.";
     }
 
     private void updateRoomOccupancy(String roomNumber, String occupancyStatus) {

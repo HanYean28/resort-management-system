@@ -186,12 +186,12 @@ public class BookingUI {
         }
 
         if (booking.getStatus().equals(BookingController.STATUS_ASSIGNED)) {
-            System.out.println("Booking assigned successfully.");
             printBookingDetail(booking);
+            System.out.println("Booking assigned successfully.");
         } else {
+            printBookingDetail(booking);
             UIUtils.printError("The first pending booking cannot be assigned yet.");
             UIUtils.printError("Reason: No ready and vacant room of requested type is available for the selected date.");
-            printBookingDetail(booking);
         }
     }
 

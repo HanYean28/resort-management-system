@@ -202,7 +202,8 @@ public class HousekeepingController {
 
         HousekeepingLog lastLog = entry.getStack().pop();
         Room room = lastLog.getRoom();
-        applyStatusChange(room, lastLog.getNewStatus(), lastLog.getOldStatus(), false);
+        applyStatusChange(room, lastLog.getNewStatus(), lastLog.getOldStatus(), false,
+                HousekeepingLog.ACTION_ROLLBACK);
         return lastLog;
     }
 
@@ -265,6 +266,11 @@ public class HousekeepingController {
     }
 
     private void applyStatusChange(Room room, String oldStatus, String newStatus, boolean allowRollback) {
+        applyStatusChange(room, oldStatus, newStatus, allowRollback, HousekeepingLog.ACTION_UPDATE);
+    }
+
+    private void applyStatusChange(Room room, String oldStatus, String newStatus, boolean allowRollback,
+            String action) {
         String timestamp = getCurrentTimestamp();
         room.setCleanlinessStatus(newStatus);
         room.setLastUpdate(timestamp);
@@ -277,7 +283,7 @@ public class HousekeepingController {
             room.setDirtySince("N/A");
         }
 
-        HousekeepingLog log = new HousekeepingLog(room, oldStatus, newStatus, timestamp);
+        HousekeepingLog log = new HousekeepingLog(room, oldStatus, newStatus, timestamp, action);
         if (allowRollback) {
             pushRollbackLog(room.getRoomNumber(), log);
         }
@@ -298,7 +304,8 @@ public class HousekeepingController {
                 if (parts.length >= 4) {
                     Room room = getRoom(parts[0]);
                     if (room != null) {
-                        taskHistory.add(new HousekeepingLog(room, parts[1], parts[2], parts[3]));
+                        String action = parts.length >= 5 ? parts[4] : HousekeepingLog.ACTION_UPDATE;
+                        taskHistory.add(new HousekeepingLog(room, parts[1], parts[2], parts[3], action));
                     }
                 }
             }
@@ -311,7 +318,7 @@ public class HousekeepingController {
         taskHistory.add(log);
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(TASK_HISTORY_FILE, true))) {
             bw.write(log.getRoom().getRoomNumber() + "|" + log.getOldStatus() + "|" + log.getNewStatus()
-                    + "|" + log.getTimestamp());
+                    + "|" + log.getTimestamp() + "|" + log.getAction());
             bw.newLine();
         } catch (IOException e) {
             // Keep the console flow simple; failed saves are ignored in this prototype.

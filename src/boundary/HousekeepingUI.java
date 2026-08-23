@@ -224,15 +224,16 @@ public class HousekeepingUI {
             return;
         }
 
-        System.out.printf("%-4s | %-6s | %-19s | %-22s | %-22s%n",
-                "No.", "Room", "Timestamp", "Old Status", "New Status");
+        System.out.printf("%-4s | %-6s | %-19s | %-8s | %-22s | %-22s%n",
+                "No.", "Room", "Timestamp", "Action", "Old Status", "New Status");
         UIUtils.printSectionLine();
         for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
             HousekeepingLog log = logs.getEntry(i);
-            System.out.printf("%-4d | %-6s | %-19s | %-22s | %-22s%n",
+            System.out.printf("%-4d | %-6s | %-19s | %-8s | %-22s | %-22s%n",
                     i,
                     log.getRoom().getRoomNumber(),
                     log.getTimestamp(),
+                    log.getAction(),
                     log.getOldStatus(),
                     log.getNewStatus());
         }
@@ -533,15 +534,16 @@ public class HousekeepingUI {
             return;
         }
 
-        System.out.printf("%-4s | %-6s | %-19s | %-22s | %-22s%n",
-                "No.", "Room", "Timestamp", "Old Status", "New Status");
+        System.out.printf("%-4s | %-6s | %-19s | %-8s | %-22s | %-22s%n",
+                "No.", "Room", "Timestamp", "Action", "Old Status", "New Status");
         UIUtils.printSectionLine();
         for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
             HousekeepingLog log = logs.getEntry(i);
-            System.out.printf("%-4d | %-6s | %-19s | %-22s | %-22s%n",
+            System.out.printf("%-4d | %-6s | %-19s | %-8s | %-22s | %-22s%n",
                     i,
                     log.getRoom().getRoomNumber(),
                     log.getTimestamp(),
+                    log.getAction(),
                     log.getOldStatus(),
                     log.getNewStatus());
         }
