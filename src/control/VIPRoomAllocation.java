@@ -90,7 +90,7 @@ public class VIPRoomAllocation {
 
                 String[] data = line.split("\\|");
 
-                if (data.length < 5) {
+                if (data.length < 4) {
                     continue;
                 }
 
@@ -98,14 +98,12 @@ public class VIPRoomAllocation {
                 String name           = data[1].trim();
                 String phone          = data[2].trim();
                 String loyaltyTier    = data[3].trim();
-                double billingAmount  = Double.parseDouble(data[4].trim());
 
                 Guest guest = new Guest(
                         confirmationNo,
                         name,
                         phone,
-                        loyaltyTier,
-                        billingAmount
+                        loyaltyTier
                 );
 
                 addGuest(guest);
@@ -115,8 +113,6 @@ public class VIPRoomAllocation {
 
         } catch (IOException e) {
             System.out.println("Error loading guests.txt: " + e.getMessage());
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid billing amount in guests.txt.");
         }
     }
 
@@ -493,7 +489,7 @@ public class VIPRoomAllocation {
                 new BufferedWriter(new FileWriter("guests.txt"))) {
 
             writer.write(
-                    "# confirmationNo|name|phone|loyaltyTier|billingAmount");
+                    "# confirmationNo|name|phone|loyaltyTier");
             writer.newLine();
 
             for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
@@ -508,8 +504,7 @@ public class VIPRoomAllocation {
                         g.getConfirmationNo() + "|" +
                         g.getName()           + "|" +
                         g.getPhone()          + "|" +
-                        g.getLoyaltyTier()    + "|" +
-                        g.getBillingAmount()
+                        g.getLoyaltyTier()
                 );
 
                 writer.newLine();

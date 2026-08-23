@@ -54,7 +54,7 @@ public class BookingController {
         }
 
         String confirmationNo = generateConfirmationNo();
-        frontDeskService.addGuest(new Guest(confirmationNo, name, phone, "NONE", 0.0));
+        frontDeskService.addGuest(new Guest(confirmationNo, name, phone, "NONE"));
         return frontDeskService.searchByConfirmationNumber(confirmationNo);
     }
 

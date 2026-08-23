@@ -10,14 +10,12 @@ public class Guest implements Serializable, Comparable<Guest> {
     private String name;
     private String phone;
     private String loyaltyTier;
-    private double billingAmount;
 
-    public Guest(String confirmationNo, String name, String phone, String loyaltyTier, double billingAmount) {
+    public Guest(String confirmationNo, String name, String phone, String loyaltyTier) {
         this.confirmationNo = confirmationNo;
         this.name = name;
         this.phone = phone;
         this.loyaltyTier = loyaltyTier;
-        this.billingAmount = billingAmount;
     }
 
     public String getConfirmationNo() {
@@ -52,21 +50,12 @@ public class Guest implements Serializable, Comparable<Guest> {
         this.loyaltyTier = loyaltyTier;
     }
 
-    public double getBillingAmount() {
-        return billingAmount;
-    }
-
-    public void setBillingAmount(double billingAmount) {
-        this.billingAmount = billingAmount;
-    }
-
     @Override
     public String toString() {
         return "Guest{" +
                 "Confirmation No='" + confirmationNo + '\'' +
                 ", Name='" + name + '\'' +
                 ", Tier='" + loyaltyTier + '\'' +
-                ", Billing=" + billingAmount +
                 '}';
     }
 

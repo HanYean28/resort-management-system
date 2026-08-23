@@ -434,11 +434,6 @@ public class VIPRoomAllocationUI {
         );
 
         System.out.println(
-                "Billing Amount  : RM "
-                + guest.getBillingAmount()
-        );
-
-        System.out.println(
                 "Room No         : "
                 + controller.getGuestCurrentRoom(guest.getConfirmationNo())
         );

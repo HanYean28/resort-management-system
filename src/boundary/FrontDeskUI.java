@@ -199,15 +199,15 @@ public class FrontDeskUI {
             return;
         }
 
-        System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s | %10s%n",
-                "Confirmation No", "Name", "Tier", "Room No", "Room Type", "Billing (RM)");
+        System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s%n",
+                "Confirmation No", "Name", "Tier", "Room No", "Room Type");
         UIUtils.printSectionLine();
         for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
             Guest g = guests.getEntry(i);
             String roomNo = service.getGuestCurrentRoom(g.getConfirmationNo());
-            System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s | %10.2f%n",
+            System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s%n",
                     g.getConfirmationNo(), g.getName(), g.getLoyaltyTier(), roomNo,
-                    service.getRoomType(roomNo), g.getBillingAmount());
+                    service.getRoomType(roomNo));
         }
         UIUtils.printSectionLine();
         System.out.println("Total Records: " + guests.getNumberOfEntries());
@@ -220,7 +220,6 @@ public class FrontDeskUI {
         System.out.println("Loyalty Tier    : " + g.getLoyaltyTier());
         System.out.println("Room Number     : " + service.getGuestCurrentRoom(g.getConfirmationNo()));
         System.out.println("Room Type       : " + service.getGuestCurrentRoomType(g.getConfirmationNo()));
-        System.out.printf("Billing Amount  : RM %.2f%n", g.getBillingAmount());
         UIUtils.printSectionLine();
     }
 

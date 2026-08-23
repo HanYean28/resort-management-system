@@ -39,7 +39,7 @@ public class FrontDeskService {
 
     /**
      * Loads guest records from guests.txt.
-     * Format: confirmationNo|name|phone|loyaltyTier|billingAmount
+     * Format: confirmationNo|name|phone|loyaltyTier
      */
     public void loadGuestsFromFile() {
         try (BufferedReader br = new BufferedReader(new FileReader(DATA_FILE))) {
@@ -47,9 +47,8 @@ public class FrontDeskService {
             while ((line = br.readLine()) != null) {
                 if (line.trim().isEmpty() || line.trim().startsWith("#")) continue;
                 String[] parts = line.split("\\|");
-                if (parts.length >= 5) {
-                    Guest guest = new Guest(parts[0], parts[1], parts[2], parts[3],
-                            Double.parseDouble(parts[4]));
+                if (parts.length >= 4) {
+                    Guest guest = new Guest(parts[0], parts[1], parts[2], parts[3]);
                     guestTree.add(guest);
                 }
             }
@@ -62,23 +61,23 @@ public class FrontDeskService {
     /** Hardcoded sample data so this module can be demonstrated/tested standalone.
      *  Room numbers here match the real Housekeeping rooms.txt (101-108). */
     private void loadSampleData() {
-        guestTree.add(new Guest("20260701", "Tan Wei Ling", "012-3456789", "NONE", 0.00));
-        guestTree.add(new Guest("20260702", "Nurul Aisyah", "013-2345678", "Diamond", 150.50));
-        guestTree.add(new Guest("20260703", "Rajesh Kumar", "016-7891234", "Platinum", 0.00));
-        guestTree.add(new Guest("20260704", "Chong Mei Yee", "011-9988776", "NONE", 45.00));
-        guestTree.add(new Guest("20260705", "Ahmad Faiz", "019-2233445", "Elite", 320.00));
+        guestTree.add(new Guest("20260701", "Tan Wei Ling", "012-3456789", "NONE"));
+        guestTree.add(new Guest("20260702", "Nurul Aisyah", "013-2345678", "Diamond"));
+        guestTree.add(new Guest("20260703", "Rajesh Kumar", "016-7891234", "Platinum"));
+        guestTree.add(new Guest("20260704", "Chong Mei Yee", "011-9988776", "NONE"));
+        guestTree.add(new Guest("20260705", "Ahmad Faiz", "019-2233445", "Elite"));
     }
 
     /** Saves all current guest records back to guests.txt (in confirmationNo order). */
     public void saveGuestsToFile() {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(DATA_FILE))) {
-            bw.write("# confirmationNo|name|phone|loyaltyTier|billingAmount");
+            bw.write("# confirmationNo|name|phone|loyaltyTier");
             bw.newLine();
             Iterator<Guest> it = guestTree.getInorderIterator();
             while (it.hasNext()) {
                 Guest g = it.next();
                 bw.write(g.getConfirmationNo() + "|" + g.getName() + "|" + g.getPhone() + "|"
-                        + g.getLoyaltyTier() + "|" + g.getBillingAmount());
+                        + g.getLoyaltyTier());
                 bw.newLine();
             }
         } catch (IOException e) {
@@ -119,7 +118,7 @@ public class FrontDeskService {
 
     /** Builds a placeholder Guest used only as a search key (equals/compareTo use confirmationNo only). */
     private Guest searchKey(String confirmationNo) {
-        return new Guest(confirmationNo, null, null, null, 0.0);
+        return new Guest(confirmationNo, null, null, null);
     }
 
     public boolean isEmpty() {
@@ -183,6 +182,10 @@ public class FrontDeskService {
     private boolean isActiveRoomBookingStatus(String status) {
         return status.equalsIgnoreCase("Assigned")
                 || status.equalsIgnoreCase("Checked In");
+    }
+
+    private boolean isCurrentStayStatus(String status) {
+        return status.equalsIgnoreCase("Checked In");
     }
 
     private boolean isDateWithinStay(LocalDate date, String checkInDate, String checkOutDate) {
@@ -259,7 +262,7 @@ public class FrontDeskService {
                 String[] parts = line.split("\\|");
                 if (parts.length >= 8
                         && parts[1].equalsIgnoreCase(confirmationNo)
-                        && isActiveRoomBookingStatus(parts[6])) {
+                        && isCurrentStayStatus(parts[6])) {
                     return parts[7];
                 }
             }
