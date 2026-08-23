@@ -8,27 +8,60 @@ import entity.Guest;
  * Guests are stored according to their loyalty tier.
  * Higher loyalty tier = higher priority.
  *
- * The queue uses the global ArrayList ADT.
+ * Previously backed by ArrayList (linear ADT).
+ * Now backed by BinaryHeap (non-linear ADT).
+ *
+ * The BinaryHeap organises guests as a complete binary tree:
+ *
+ *              [Diamond]
+ *             /          \
+ *         [Elite]      [Platinum]
+ *        /      \
+ *     [Gold]  [Silver]
+ *
+ * Every public method signature is unchanged — the rest of
+ * the codebase (VIPRoomAllocation, UI, Simulation) does not
+ * need any modification.
  */
 public class ArrayPriorityQueue {
 
-    private ArrayList<Guest> list;
+    private BinaryHeap<Guest> heap;
+
+    // -------------------------------------------------------
+    // Constructor
+    // -------------------------------------------------------
 
     /**
      * Purpose:
-     * Creates an empty VIP priority queue.
+     * Creates an empty VIP priority queue backed by a
+     * BinaryHeap.
+     *
+     * The comparator passed to BinaryHeap defines priority:
+     * a guest with a higher tier value is placed closer
+     * to the root (max-heap behaviour).
      */
     public ArrayPriorityQueue() {
-        list = new ArrayList<>();
+
+        heap = new BinaryHeap<>((a, b) ->
+                getPriority(a.getLoyaltyTier())
+                - getPriority(b.getLoyaltyTier())
+        );
     }
+
+    // -------------------------------------------------------
+    // Public methods (signatures unchanged)
+    // -------------------------------------------------------
 
     /**
      * Purpose:
-     * Adds a guest into the priority queue according
-     * to the guest's loyalty tier.
+     * Adds a guest into the priority queue.
      *
-     * Higher priority guests are placed closer to
-     * the front of the queue.
+     * The BinaryHeap's insert() places the guest at the
+     * next leaf, then bubbles it UP the tree until its
+     * priority is correctly positioned.
+     *
+     * This replaces the old linear scan-and-insert into
+     * ArrayList — insertion is now O(log n) instead of O(n).
      */
     public void add(Guest guest) {
 
@@ -36,71 +69,43 @@ public class ArrayPriorityQueue {
             throw new IllegalArgumentException("Guest cannot be null");
         }
 
-        int newPriority = getPriority(guest.getLoyaltyTier());
-
-        int position = 1;
-
-        // Find the correct position for the new guest.
-        while (position <= list.getNumberOfEntries()) {
-
-            Guest currentGuest = list.getEntry(position);
-
-            int currentPriority =
-                    getPriority(currentGuest.getLoyaltyTier());
-
-            /*
-             * Higher priority guest should be placed
-             * before lower priority guest.
-             */
-            if (newPriority > currentPriority) {
-                break;
-            }
-
-            /*
-             * If the priority is equal, continue forward.
-             * This keeps the existing guest before the new guest.
-             */
-            position++;
-        }
-
-        // IMPORTANT:
-        // Your original code calculated 'position' but never
-        // actually inserted the guest.
-        list.add(position, guest);
+        heap.insert(guest);
     }
 
     /**
      * Purpose:
      * Removes and returns the highest-priority guest
      * from the front of the queue.
+     *
+     * The BinaryHeap's removeMax() takes the root (highest
+     * priority), moves the last leaf to the root, then
+     * bubbles it DOWN until heap order is restored.
      */
     public Guest remove() {
 
-        if (list.isEmpty()) {
-            return null;
-        }
-
-        return list.remove(1);
+        return heap.removeMax();
     }
 
     /**
      * Purpose:
      * Returns the highest-priority guest without
      * removing the guest from the queue.
+     *
+     * Direct O(1) root access in the heap.
      */
     public Guest peek() {
 
-        if (list.isEmpty()) {
-            return null;
-        }
-
-        return list.getEntry(1);
+        return heap.peekMax();
     }
 
     /**
      * Purpose:
      * Removes a guest from the queue using
      * the guest's confirmation number.
+     *
+     * Scans the heap to find the matching guest,
+     * then delegates removal to BinaryHeap.remove()
+     * which restores heap order after deletion.
      */
     public boolean removeByConfirmationNo(String confirmationNo) {
 
@@ -108,25 +113,21 @@ public class ArrayPriorityQueue {
             return false;
         }
 
-        for (int i = 1; i <= list.getNumberOfEntries(); i++) {
+        Guest target = find(confirmationNo);
 
-            Guest guest = list.getEntry(i);
-
-            if (guest != null
-                    && confirmationNo.equals(guest.getConfirmationNo())) {
-
-                list.remove(i);
-                return true;
-            }
+        if (target == null) {
+            return false;
         }
 
-        return false;
+        return heap.remove(target);
     }
 
     /**
      * Purpose:
-     * Searches for a guest using their
-     * confirmation number.
+     * Searches for a guest using their confirmation number.
+     *
+     * Uses toSortedArray() to get all guests, then scans
+     * for a matching confirmation number.
      */
     public Guest find(String confirmationNo) {
 
@@ -134,25 +135,13 @@ public class ArrayPriorityQueue {
             return null;
         }
 
-        for (int i = 1; i <= list.getNumberOfEntries(); i++) {
+        Guest[] all = getAll();
 
-            Guest guest = list.getEntry(i);
+        for (Guest guest : all) {
 
-            /*
-             * FIX:
-             * Your original code compared:
-             *
-             * guest.getConfirmationNo()
-             * ==
-             * guest.getConfirmationNo()
-             *
-             * which is always true.
-             *
-             * We need to compare against the parameter.
-             */
             if (guest != null
-                    && confirmationNo.equals(guest.getConfirmationNo())) {
-
+                    && confirmationNo.equals(
+                            guest.getConfirmationNo())) {
                 return guest;
             }
         }
@@ -163,19 +152,18 @@ public class ArrayPriorityQueue {
     /**
      * Purpose:
      * Returns all guests currently in the queue
-     * without removing them.
+     * in priority order (highest first) without
+     * removing them.
+     *
+     * Delegates to BinaryHeap.toSortedArray() which
+     * extracts from a temporary copy of the heap so
+     * the real queue is not disturbed.
      */
     public Guest[] getAll() {
 
-        Guest[] guests =
-                new Guest[list.getNumberOfEntries()];
+        Guest[] result = new Guest[heap.size()];
 
-        for (int i = 1; i <= list.getNumberOfEntries(); i++) {
-
-            guests[i - 1] = list.getEntry(i);
-        }
-
-        return guests;
+        return heap.toSortedArray(result);
     }
 
     /**
@@ -185,7 +173,7 @@ public class ArrayPriorityQueue {
      */
     public int size() {
 
-        return list.getNumberOfEntries();
+        return heap.size();
     }
 
     /**
@@ -194,7 +182,7 @@ public class ArrayPriorityQueue {
      */
     public boolean isEmpty() {
 
-        return list.isEmpty();
+        return heap.isEmpty();
     }
 
     /**
@@ -203,15 +191,19 @@ public class ArrayPriorityQueue {
      */
     public void clear() {
 
-        list.clear();
+        heap.clear();
     }
+
+    // -------------------------------------------------------
+    // Private helper
+    // -------------------------------------------------------
 
     /**
      * Purpose:
-     * Converts a loyalty tier into a numerical
-     * priority used internally by the ADT.
+     * Converts a loyalty tier into a numerical priority
+     * used by the BinaryHeap comparator.
      *
-     * Higher number = higher priority.
+     * Higher number = higher priority = closer to root.
      */
     private int getPriority(String loyaltyTier) {
 

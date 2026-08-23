@@ -2,6 +2,8 @@ package control;
 
 import adt.ArrayList;
 import adt.ArrayPriorityQueue;
+import adt.ListInterface;
+import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
 
@@ -10,6 +12,9 @@ import java.io.BufferedWriter;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 
 /**
  * Controller for VIP Room Allocation.
@@ -17,54 +22,58 @@ import java.io.IOException;
  * Responsibilities:
  * - Load guest data from guests.txt
  * - Load room data from Room.txt
+ * - Delegate all booking data operations to BookingController
  * - Add VIP guests to the VIP priority queue
  * - Search and remove VIP guests
  * - Display available rooms
  * - Allocate rooms to the highest-priority VIP guest
+ *
+ * Priority ordering:
+ *   1. Loyalty tier  (Diamond > Elite > Platinum > Gold > Silver)
+ *   2. Booking createdAt (earlier booking wins within same tier)
  */
 public class VIPRoomAllocation {
 
-    private ArrayPriorityQueue vipQueue;
-    private ArrayList<Guest> guests;
-    private ArrayList<Room> rooms;
+    private ArrayPriorityQueue   vipQueue;
+    private ArrayList<Guest>     guests;
+    private ArrayList<Room>      rooms;
+    private BookingController    bookingController;
+
+    private static final DateTimeFormatter FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     /**
      * Purpose:
      * Initializes the VIP room allocation module.
      *
-     * The constructor also loads existing guest and
-     * room information from the TXT files.
+     * BookingController is reused here so bookings.txt is
+     * managed by one controller only — no duplicate reads
+     * or writes.
      */
     public VIPRoomAllocation() {
 
-        vipQueue = new ArrayPriorityQueue();
+        vipQueue          = new ArrayPriorityQueue();
+        guests            = new ArrayList<>();
+        rooms             = new ArrayList<>();
+        bookingController = new BookingController();
 
-        guests = new ArrayList<>();
-
-        rooms = new ArrayList<>();
-
-        // Load existing data when the module starts.
         loadGuestData();
         loadRoomData();
     }
+
+    // -------------------------------------------------------
+    // File loaders
+    // -------------------------------------------------------
 
     /**
      * Purpose:
      * Loads guest information from guests.txt.
      *
-     * FIX 1: Changed "Guest.txt" to "guests.txt" to match
-     * the actual filename on disk (case-sensitive on Linux/Mac).
-     *
-     * VIP guests with a loyalty tier other than NONE
-     * are added to the VIP priority queue.
-     *
-     * Standard guests with NONE loyalty are stored
-     * in the guest list but are not added to this
-     * module's VIP queue.
+     * VIP guests (loyalty tier != NONE) are added to
+     * the VIP priority queue.
      */
     private void loadGuestData() {
 
-        // FIX 1: filename corrected from "Guest.txt" to "guests.txt"
         try (BufferedReader reader =
                 new BufferedReader(new FileReader("guests.txt"))) {
 
@@ -74,7 +83,6 @@ public class VIPRoomAllocation {
 
                 line = line.trim();
 
-                // Ignore empty lines and header lines.
                 if (line.isEmpty() || line.startsWith("#")
                         || line.startsWith("confirmationNo")) {
                     continue;
@@ -82,17 +90,16 @@ public class VIPRoomAllocation {
 
                 String[] data = line.split("\\|");
 
-                // Make sure the line contains all 6 fields.
                 if (data.length != 6) {
                     continue;
                 }
 
-                String confirmationNo   = data[0].trim();
-                String name             = data[1].trim();
-                String phone            = data[2].trim();
-                String loyaltyTier      = data[3].trim();
-                double billingAmount    = Double.parseDouble(data[4].trim());
-                String roomNo           = data[5].trim();
+                String confirmationNo = data[0].trim();
+                String name           = data[1].trim();
+                String phone          = data[2].trim();
+                String loyaltyTier    = data[3].trim();
+                double billingAmount  = Double.parseDouble(data[4].trim());
+                String roomNo         = data[5].trim();
 
                 Guest guest = new Guest(
                         confirmationNo,
@@ -109,33 +116,21 @@ public class VIPRoomAllocation {
             System.out.println("Guest data loaded successfully.");
 
         } catch (IOException e) {
-
-            System.out.println(
-                    "Error loading guests.txt: " + e.getMessage());
-
+            System.out.println("Error loading guests.txt: " + e.getMessage());
         } catch (NumberFormatException e) {
-
-            System.out.println(
-                    "Invalid billing amount in guests.txt.");
+            System.out.println("Invalid billing amount in guests.txt.");
         }
     }
 
     /**
      * Purpose:
      * Loads room information from Room.txt.
-     *
-     * FIX 2: Room.txt has 7 fields, not 6.
-     * The field order is:
-     *   roomNumber | roomType | cleanlinessStatus | occupancyStatus
-     *   | lastUpdate | dirtySince | lastTurnaroundMinutes
-     *
-     * The original code checked for 6 fields (rejecting every line)
-     * and skipped occupancyStatus, causing wrong field mapping.
+     * Room.txt has 7 fields including occupancyStatus.
      */
     private void loadRoomData() {
 
         try (BufferedReader reader =
-                new BufferedReader(new FileReader("rooms.txt"))) {
+                new BufferedReader(new FileReader("Room.txt"))) {
 
             String line;
 
@@ -143,7 +138,6 @@ public class VIPRoomAllocation {
 
                 line = line.trim();
 
-                // Ignore empty lines and header lines.
                 if (line.isEmpty() || line.startsWith("#")
                         || line.startsWith("roomNumber")) {
                     continue;
@@ -151,21 +145,18 @@ public class VIPRoomAllocation {
 
                 String[] data = line.split("\\|");
 
-                // FIX 2: Room.txt has 7 fields — changed from 6 to 7.
                 if (data.length != 7) {
                     continue;
                 }
 
-                // FIX 2: Correct field mapping including occupancyStatus.
                 String roomNumber            = data[0].trim();
                 String roomType              = data[1].trim();
                 String cleanlinessStatus     = data[2].trim();
-                String occupancyStatus       = data[3].trim(); // was missing
-                String lastUpdate            = data[4].trim(); // was data[3]
-                String dirtySince            = data[5].trim(); // was data[4]
-                String lastTurnaroundMinutes = data[6].trim(); // was data[5]
+                String occupancyStatus       = data[3].trim();
+                String lastUpdate            = data[4].trim();
+                String dirtySince            = data[5].trim();
+                String lastTurnaroundMinutes = data[6].trim();
 
-                // FIX 2: Use the 7-argument constructor to pass occupancyStatus.
                 Room room = new Room(
                         roomNumber,
                         roomType,
@@ -182,18 +173,18 @@ public class VIPRoomAllocation {
             System.out.println("Room data loaded successfully.");
 
         } catch (IOException e) {
-
-            System.out.println(
-                    "Error loading Room.txt: " + e.getMessage());
+            System.out.println("Error loading Room.txt: " + e.getMessage());
         }
     }
+
+    // -------------------------------------------------------
+    // Guest management
+    // -------------------------------------------------------
 
     /**
      * Purpose:
      * Adds a guest to the general guest list.
-     *
-     * Only guests with a VIP loyalty tier are placed
-     * into the VIP priority queue.
+     * VIP guests (tier != NONE) also enter the priority queue.
      */
     public void addGuest(Guest guest) {
 
@@ -203,10 +194,6 @@ public class VIPRoomAllocation {
 
         guests.add(guest);
 
-        /*
-         * Only VIP loyalty tiers should enter the
-         * VIP room allocation queue.
-         */
         if (isVIP(guest)) {
             vipQueue.add(guest);
         }
@@ -214,8 +201,7 @@ public class VIPRoomAllocation {
 
     /**
      * Purpose:
-     * Determines whether a guest belongs to the
-     * VIP room allocation queue.
+     * Determines whether a guest qualifies as VIP.
      */
     private boolean isVIP(Guest guest) {
 
@@ -223,8 +209,7 @@ public class VIPRoomAllocation {
             return false;
         }
 
-        return !guest.getLoyaltyTier()
-                .equalsIgnoreCase("NONE");
+        return !guest.getLoyaltyTier().equalsIgnoreCase("NONE");
     }
 
     /**
@@ -240,24 +225,38 @@ public class VIPRoomAllocation {
         rooms.add(room);
     }
 
+    // -------------------------------------------------------
+    // Queue queries
+    // -------------------------------------------------------
+
     /**
      * Purpose:
-     * Returns the highest-priority VIP guest
-     * without removing the guest.
+     * Returns the highest-priority VIP guest without
+     * removing them from the queue.
+     *
+     * When two guests share the same tier, the one with
+     * the earlier booking createdAt (from BookingController)
+     * is returned.
      */
     public Guest getNextVIPGuest() {
 
-        return vipQueue.peek();
+        Guest[] sorted = getSortedWaitingList();
+
+        if (sorted.length == 0) {
+            return null;
+        }
+
+        return sorted[0];
     }
 
     /**
      * Purpose:
-     * Returns all VIP guests currently waiting
-     * in priority order.
+     * Returns all VIP guests in the waiting queue,
+     * sorted by priority then by booking createdAt.
      */
     public Guest[] getWaitingList() {
 
-        return vipQueue.getAll();
+        return getSortedWaitingList();
     }
 
     /**
@@ -271,51 +270,46 @@ public class VIPRoomAllocation {
 
     /**
      * Purpose:
-     * Checks whether there are no VIP guests
-     * waiting for room allocation.
+     * Checks whether there are no VIP guests waiting.
      */
     public boolean isWaitingListEmpty() {
 
         return vipQueue.isEmpty();
     }
 
+    // -------------------------------------------------------
+    // Room operations
+    // -------------------------------------------------------
+
     /**
      * Purpose:
-     * Returns all rooms that are currently Ready
-     * for guest allocation.
+     * Returns all rooms whose cleanliness status is Ready.
      */
     public Room[] getAvailableRooms() {
 
         int count = 0;
 
-        for (int i = 1;
-                i <= rooms.getNumberOfEntries();
-                i++) {
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
 
             Room room = rooms.getEntry(i);
 
             if (room != null
                     && "Ready".equalsIgnoreCase(
                             room.getCleanlinessStatus())) {
-
                 count++;
             }
         }
 
         Room[] availableRooms = new Room[count];
-
         int index = 0;
 
-        for (int i = 1;
-                i <= rooms.getNumberOfEntries();
-                i++) {
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
 
             Room room = rooms.getEntry(i);
 
             if (room != null
                     && "Ready".equalsIgnoreCase(
                             room.getCleanlinessStatus())) {
-
                 availableRooms[index++] = room;
             }
         }
@@ -325,44 +319,40 @@ public class VIPRoomAllocation {
 
     /**
      * Purpose:
-     * Allocates a selected available room to the
-     * highest-priority VIP guest.
+     * Allocates a selected room to the highest-priority
+     * VIP guest (priority then createdAt tiebreaker).
      *
-     * The guest is removed from the VIP queue after
-     * successful allocation.
+     * The guest is removed from the queue after allocation.
      */
     public Guest allocateRoom(String roomNumber) {
 
-        Guest guest = vipQueue.peek();
+        Guest nextGuest = getNextVIPGuest();
 
-        if (guest == null) {
+        if (nextGuest == null) {
             return null;
         }
 
-        Room selectedRoom =
-                findAvailableRoom(roomNumber);
+        Room selectedRoom = findAvailableRoom(roomNumber);
 
         if (selectedRoom == null) {
             return null;
         }
 
-        // Remove the highest-priority guest.
-        guest = vipQueue.remove();
+        // Remove this specific guest from the queue.
+        vipQueue.removeByConfirmationNo(nextGuest.getConfirmationNo());
 
-        // Assign the selected room to the guest.
-        guest.setRoomNo(
-                selectedRoom.getRoomNumber());
+        // Assign the selected room.
+        nextGuest.setRoomNo(selectedRoom.getRoomNumber());
 
-        // Change room status after allocation.
+        // Update room status.
         selectedRoom.setCleanlinessStatus("Occupied");
 
-        return guest;
+        return nextGuest;
     }
 
     /**
      * Purpose:
-     * Searches for a VIP guest using their
-     * confirmation number.
+     * Searches for a VIP guest by confirmation number.
      */
     public Guest findGuest(String confirmationNo) {
 
@@ -371,82 +361,110 @@ public class VIPRoomAllocation {
 
     /**
      * Purpose:
-     * Removes a VIP guest from the waiting queue
-     * using the confirmation number.
+     * Removes a VIP guest from the queue by confirmation number.
      */
     public boolean removeGuest(String confirmationNo) {
 
-        return vipQueue.removeByConfirmationNo(
-                confirmationNo);
+        return vipQueue.removeByConfirmationNo(confirmationNo);
+    }
+
+    // -------------------------------------------------------
+    // Booking delegation — all booking data goes through
+    // BookingController so there is one source of truth.
+    // -------------------------------------------------------
+
+    /**
+     * Purpose:
+     * Adds a new VIP guest and registers a standard booking
+     * via BookingController.
+     *
+     * BookingController.addGuest() saves to guests.txt.
+     * BookingController.addStandardBooking() saves to bookings.txt.
+     * The guest is also added to the local VIP queue.
+     */
+    public String addVIPGuest(String name, String phone,
+            String loyaltyTier, String requestedRoomType,
+            String checkInDate, String checkOutDate) {
+
+        // Register the guest through BookingController.
+        Guest guest = bookingController.addGuest(name, phone);
+
+        if (guest == null) {
+            return "Failed to create guest. Name and phone cannot be empty.";
+        }
+
+        // Update the loyalty tier — BookingController creates guests
+        // with NONE tier by default.
+        guest.setLoyaltyTier(loyaltyTier);
+
+        // Add to local VIP queue if tier qualifies.
+        if (isVIP(guest)) {
+            guests.add(guest);
+            vipQueue.add(guest);
+        }
+
+        // Register the booking via BookingController.
+        // This saves to bookings.txt automatically.
+        String error = bookingController.addStandardBooking(
+                guest.getConfirmationNo(),
+                requestedRoomType,
+                checkInDate,
+                checkOutDate
+        );
+
+        return error; // null means success
     }
 
     /**
      * Purpose:
-     * Finds a specific room if the room exists,
-     * is currently Ready, and matches the room number.
+     * Returns the createdAt timestamp for a guest's booking
+     * by delegating to BookingController.
+     *
+     * Used by the UI to display booking date and by the
+     * tiebreaker logic in getSortedWaitingList().
      */
-    private Room findAvailableRoom(String roomNumber) {
+    public String getBookingCreatedAt(String confirmationNo) {
 
-        if (roomNumber == null
-                || roomNumber.trim().isEmpty()) {
-
+        if (confirmationNo == null) {
             return null;
         }
 
-        for (int i = 1;
-                i <= rooms.getNumberOfEntries();
-                i++) {
+        // Ask BookingController for all bookings matching
+        // this confirmation number.
+        ListInterface<BookingRequest> all =
+                bookingController.getBookingsByStatus(
+                        BookingController.FILTER_ALL);
 
-            Room room = rooms.getEntry(i);
+        for (int i = 1; i <= all.getNumberOfEntries(); i++) {
 
-            if (room != null
-                    && roomNumber.equalsIgnoreCase(
-                            room.getRoomNumber())
-                    && "Ready".equalsIgnoreCase(
-                            room.getCleanlinessStatus())) {
+            BookingRequest booking = all.getEntry(i);
 
-                return room;
+            if (booking != null
+                    && confirmationNo.equals(
+                            booking.getGuest().getConfirmationNo())) {
+                return booking.getCreatedAt();
             }
         }
 
         return null;
     }
 
-    /**
-     * Purpose:
-     * Adds a newly created VIP booking to the
-     * same VIP queue used by existing TXT data,
-     * then saves the updated guest list to guests.txt
-     * so the booking persists after the program exits.
-     */
-    public void addVIPGuest(Guest guest) {
-
-        if (guest == null) {
-            return;
-        }
-
-        addGuest(guest);
-
-        // Persist the new guest to disk immediately.
-        saveGuestData();
-    }
+    // -------------------------------------------------------
+    // Persistence
+    // -------------------------------------------------------
 
     /**
      * Purpose:
-     * Rewrites guests.txt with the current in-memory
-     * guest list so that any newly added guests are
-     * saved and available on the next program launch.
+     * Saves the current in-memory guest list back to guests.txt.
      *
-     * The header line is preserved at the top of the file.
-     * Every guest is written as a pipe-delimited line:
-     *   confirmationNo|name|phone|loyaltyTier|billingAmount|roomNo
+     * Called after VIP guest data changes that are not
+     * handled by BookingController (e.g. room assignment).
      */
     private void saveGuestData() {
 
         try (BufferedWriter writer =
                 new BufferedWriter(new FileWriter("guests.txt"))) {
 
-            // Write the header so loadGuestData() can skip it.
             writer.write(
                     "# confirmationNo|name|phone|loyaltyTier|billingAmount|roomNo");
             writer.newLine();
@@ -459,7 +477,6 @@ public class VIPRoomAllocation {
                     continue;
                 }
 
-                // Use "N/A" when roomNo has not been assigned yet.
                 String roomNo = (g.getRoomNo() == null
                         || g.getRoomNo().trim().isEmpty())
                         ? "N/A"
@@ -477,12 +494,135 @@ public class VIPRoomAllocation {
                 writer.newLine();
             }
 
-            System.out.println("Guest data saved successfully.");
-
         } catch (IOException e) {
-
-            System.out.println(
-                    "Error saving guests.txt: " + e.getMessage());
+            System.out.println("Error saving guests.txt: " + e.getMessage());
         }
+    }
+
+    // -------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------
+
+    /**
+     * Purpose:
+     * Returns all VIP guests from the queue sorted by:
+     *   1. Loyalty tier (highest first)
+     *   2. Booking createdAt from BookingController (earliest first)
+     */
+    private Guest[] getSortedWaitingList() {
+
+        Guest[] all = vipQueue.getAll();
+
+        // Insertion sort — queue sizes are small.
+        for (int i = 1; i < all.length; i++) {
+
+            Guest key = all[i];
+            int j = i - 1;
+
+            while (j >= 0 && compare(all[j], key) > 0) {
+                all[j + 1] = all[j];
+                j--;
+            }
+
+            all[j + 1] = key;
+        }
+
+        // Ascending result — reverse so highest priority is first.
+        reverse(all);
+
+        return all;
+    }
+
+    /**
+     * Purpose:
+     * Compares two guests for sorting.
+     *
+     * Rule 1: Higher tier = higher priority.
+     * Rule 2: Same tier — earlier createdAt wins (from BookingController).
+     */
+    private int compare(Guest a, Guest b) {
+
+        int tierA = getPriority(a.getLoyaltyTier());
+        int tierB = getPriority(b.getLoyaltyTier());
+
+        if (tierA != tierB) {
+            return tierB - tierA;
+        }
+
+        String dateA = getBookingCreatedAt(a.getConfirmationNo());
+        String dateB = getBookingCreatedAt(b.getConfirmationNo());
+
+        if (dateA == null && dateB == null) return 0;
+        if (dateA == null) return 1;
+        if (dateB == null) return -1;
+
+        try {
+            LocalDateTime timeA = LocalDateTime.parse(dateA, FORMATTER);
+            LocalDateTime timeB = LocalDateTime.parse(dateB, FORMATTER);
+            return timeA.compareTo(timeB);
+        } catch (DateTimeParseException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Purpose:
+     * Converts a loyalty tier string into a numeric priority.
+     */
+    private int getPriority(String loyaltyTier) {
+
+        if (loyaltyTier == null) return 0;
+
+        switch (loyaltyTier.toUpperCase()) {
+            case "DIAMOND":  return 5;
+            case "ELITE":    return 4;
+            case "PLATINUM": return 3;
+            case "GOLD":     return 2;
+            case "SILVER":   return 1;
+            default:         return 0;
+        }
+    }
+
+    /**
+     * Purpose:
+     * Reverses a Guest array in-place.
+     */
+    private void reverse(Guest[] arr) {
+
+        int left  = 0;
+        int right = arr.length - 1;
+
+        while (left < right) {
+            Guest temp  = arr[left];
+            arr[left]   = arr[right];
+            arr[right]  = temp;
+            left++;
+            right--;
+        }
+    }
+
+    /**
+     * Purpose:
+     * Finds a specific room by number if it is Ready.
+     */
+    private Room findAvailableRoom(String roomNumber) {
+
+        if (roomNumber == null || roomNumber.trim().isEmpty()) {
+            return null;
+        }
+
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+
+            Room room = rooms.getEntry(i);
+
+            if (room != null
+                    && roomNumber.equalsIgnoreCase(room.getRoomNumber())
+                    && "Ready".equalsIgnoreCase(room.getCleanlinessStatus())) {
+
+                return room;
+            }
+        }
+
+        return null;
     }
 }
