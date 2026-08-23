@@ -4,6 +4,7 @@ import control.VIPRoomAllocation;
 import entity.Guest;
 import entity.Room;
 import java.util.Scanner;
+
 import static boundary.UIUtils.clearScreen;
 import static boundary.UIUtils.pressEnterToContinue;
 
@@ -104,9 +105,6 @@ public class VIPRoomAllocationUI {
         clearScreen();
         System.out.println("\n===== ADD VIP BOOKING =====");
 
-        System.out.print("Enter Confirmation Number: ");
-        String confirmationNo = scanner.nextLine();
-
         System.out.print("Enter Name: ");
         String name = scanner.nextLine();
 
@@ -114,32 +112,40 @@ public class VIPRoomAllocationUI {
         String phone = scanner.nextLine();
 
         System.out.print(
-                "Enter Loyalty Tier (Elite, Diamond, Platinum): "
+                "Enter Loyalty Tier (Diamond, Elite, Platinum, Gold, Silver): "
         );
         String loyaltyTier = scanner.nextLine();
 
-        System.out.print("Enter Billing Amount: ");
-        double billingAmount = scanner.nextDouble();
-        scanner.nextLine();
+        System.out.print("Enter Requested Room Type (Standard, Deluxe, Suite): ");
+        String requestedRoomType = scanner.nextLine();
+
+        System.out.print("Enter Check-In Date (yyyy-MM-dd): ");
+        String checkInDate = scanner.nextLine();
+
+        System.out.print("Enter Check-Out Date (yyyy-MM-dd): ");
+        String checkOutDate = scanner.nextLine();
 
         /*
-         * New VIP booking does not have a room assigned yet.
-         * Therefore roomNo is set to null.
+         * addVIPGuest now delegates guest creation and booking
+         * persistence entirely to BookingController.
+         * Returns null on success, or an error message on failure.
          */
-        Guest guest = new Guest(
-                confirmationNo,
+        String error = controller.addVIPGuest(
                 name,
                 phone,
                 loyaltyTier,
-                billingAmount,
-                null
+                requestedRoomType,
+                checkInDate,
+                checkOutDate
         );
 
-        controller.addVIPGuest(guest);
-
-        System.out.println(
-                "VIP booking added successfully."
-        );
+        if (error != null) {
+            System.out.println("\nFailed to add VIP booking: " + error);
+        } else {
+            System.out.println(
+                    "\nVIP booking added successfully."
+            );
+        }
 
         pressEnterToContinue(scanner);
     }
@@ -445,6 +451,15 @@ public class VIPRoomAllocationUI {
         System.out.println(
                 "Room No         : "
                 + guest.getRoomNo()
+        );
+
+        // Show booking date from bookings.txt for transparency.
+        String createdAt =
+                controller.getBookingCreatedAt(guest.getConfirmationNo());
+
+        System.out.println(
+                "Booking Date    : "
+                + (createdAt != null ? createdAt : "N/A")
         );
     }
 }
