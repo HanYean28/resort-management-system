@@ -107,6 +107,11 @@ public class BookingController {
 
         BookingRequest booking = new BookingRequest(generateBookingId(), guest, TYPE_WALK_IN,
                 requestedRoomType, checkInDate, checkOutDate, STATUS_PENDING, "N/A", getCurrentTimestamp());
+        if (!hasSpareRoomAfterPendingStandardBookings(booking)) {
+            return "No " + requestedRoomType
+                    + " room is available for walk-in booking because pending standard bookings are reserved first.";
+        }
+
         String roomNumber = findAvailableRoom(booking);
         if (roomNumber == null) {
             return "No ready " + requestedRoomType + " room is available for this date.";
@@ -425,6 +430,41 @@ public class BookingController {
         return null;
     }
 
+    private boolean hasSpareRoomAfterPendingStandardBookings(BookingRequest walkInBooking) {
+        int availableRoomCount = countAvailableRoomsForBooking(walkInBooking);
+        int protectedPendingCount = countPendingStandardBookingsToProtect(walkInBooking);
+        return availableRoomCount > protectedPendingCount;
+    }
+
+    private int countAvailableRoomsForBooking(BookingRequest targetBooking) {
+        int count = 0;
+        ListInterface<Room> rooms = loadRoomsFromFile();
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            Room room = rooms.getEntry(i);
+            if (room.getRoomType().equalsIgnoreCase(targetBooking.getRequestedRoomType())
+                    && room.getCleanlinessStatus().equalsIgnoreCase("Ready")
+                    && room.getOccupancyStatus().equalsIgnoreCase("Vacant")
+                    && !hasDateClash(room.getRoomNumber(), targetBooking)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int countPendingStandardBookingsToProtect(BookingRequest walkInBooking) {
+        int count = 0;
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (booking.getBookingType().equals(TYPE_STANDARD)
+                    && booking.getStatus().equals(STATUS_PENDING)
+                    && booking.getRequestedRoomType().equalsIgnoreCase(walkInBooking.getRequestedRoomType())
+                    && isDateOverlap(booking, walkInBooking)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private boolean hasDateClash(String roomNumber, BookingRequest targetBooking) {
         LocalDate targetCheckIn = LocalDate.parse(targetBooking.getCheckInDate());
         LocalDate targetCheckOut = LocalDate.parse(targetBooking.getCheckOutDate());
@@ -464,6 +504,14 @@ public class BookingController {
             }
         }
         return false;
+    }
+
+    private boolean isDateOverlap(BookingRequest first, BookingRequest second) {
+        LocalDate firstCheckIn = LocalDate.parse(first.getCheckInDate());
+        LocalDate firstCheckOut = LocalDate.parse(first.getCheckOutDate());
+        LocalDate secondCheckIn = LocalDate.parse(second.getCheckInDate());
+        LocalDate secondCheckOut = LocalDate.parse(second.getCheckOutDate());
+        return firstCheckIn.isBefore(secondCheckOut) && firstCheckOut.isAfter(secondCheckIn);
     }
 
     private boolean isActiveBooking(BookingRequest booking) {
