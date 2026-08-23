@@ -13,14 +13,9 @@ public class VIPRoomAllocationUI {
     private Scanner scanner;
     private VIPRoomAllocation controller;
 
-    /**
-     * Purpose:
-     * Creates the VIP Room Allocation UI and initializes
-     * the scanner and controller.
-     */
-    public VIPRoomAllocationUI() {
+    public VIPRoomAllocationUI(Scanner scanner) {
         controller = new VIPRoomAllocation();
-        scanner = new Scanner(System.in);
+        this.scanner = scanner;
     }
 
     /**

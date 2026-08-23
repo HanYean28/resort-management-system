@@ -14,11 +14,6 @@ public class HousekeepingUI {
     private HousekeepingController manager;
     private Scanner scanner;
 
-    public HousekeepingUI() {
-        manager = new HousekeepingController();
-        scanner = new Scanner(System.in);
-    }
-
     public HousekeepingUI(Scanner scanner) {
         manager = new HousekeepingController();
         this.scanner = scanner;
