@@ -29,7 +29,7 @@ public class FrontDeskUI {
             System.out.println(" [3] Remove Guest Record");
             System.out.println(" [4] Generate Report 1: Guest Directory Report");
             System.out.println(" [5] Generate Report 2: Guest Billing Report");
-            System.out.println(" [6] View Available Rooms (Ready for Check-In)");
+            System.out.println(" [6] View Rooms Available Today");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
             System.out.print("Please enter choice (0-6): ");
@@ -38,7 +38,7 @@ public class FrontDeskUI {
                 choice = scanner.nextInt();
                 scanner.nextLine();
             } else {
-                System.out.println("Invalid input! Please enter a number.");
+                UIUtils.printError("Invalid input! Please enter a number.");
                 scanner.nextLine();
                 UIUtils.pressEnterToContinue(scanner);
                 continue;
@@ -68,7 +68,7 @@ public class FrontDeskUI {
                     System.out.println("Returning to Main Menu...");
                     break;
                 default:
-                    System.out.println("Invalid choice. Try again.");
+                    UIUtils.printError("Invalid choice. Try again.");
             }
 
             if (choice != 0) {
@@ -95,7 +95,7 @@ public class FrontDeskUI {
 
         Guest result = service.searchByConfirmationNumber(confirmationNo);
         if (result == null) {
-            System.out.println("\nNo guest record found for confirmation number " + confirmationNo + ".");
+            UIUtils.printError("No guest record found for confirmation number " + confirmationNo + ".");
         } else {
             System.out.println("\n[GUEST FOUND]");
             printGuestDetail(result);
@@ -112,7 +112,7 @@ public class FrontDeskUI {
 
         Guest removed = service.removeGuest(confirmationNo);
         if (removed == null) {
-            System.out.println("\nNo guest record found for confirmation number " + confirmationNo + ".");
+            UIUtils.printError("No guest record found for confirmation number " + confirmationNo + ".");
         } else {
             System.out.println("\nRemoved record for: " + removed.getName());
         }
@@ -153,11 +153,11 @@ public class FrontDeskUI {
 
     private void displayAvailableRooms() {
         UIUtils.clearScreen();
-        UIUtils.printHeader("AVAILABLE ROOMS (READY FOR CHECK-IN)");
+        UIUtils.printHeader("ROOMS AVAILABLE TODAY");
 
         ListInterface<Room> rooms = service.getAvailableRooms();
         if (rooms.isEmpty()) {
-            System.out.println("No rooms are currently ready for check-in.");
+            System.out.println("No rooms are available today.");
             return;
         }
 
@@ -199,14 +199,15 @@ public class FrontDeskUI {
             return;
         }
 
-        System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s | %10s%n",
-                "Confirmation No", "Name", "Tier", "Room No", "Room Type", "Billing (RM)");
+        System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s%n",
+                "Confirmation No", "Name", "Tier", "Room No", "Room Type");
         UIUtils.printSectionLine();
         for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
             Guest g = guests.getEntry(i);
-            System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s | %10.2f%n",
-                    g.getConfirmationNo(), g.getName(), g.getLoyaltyTier(), g.getRoomNo(),
-                    service.getRoomType(g.getRoomNo()), g.getBillingAmount());
+            String roomNo = service.getGuestCurrentRoom(g.getConfirmationNo());
+            System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s%n",
+                    g.getConfirmationNo(), g.getName(), g.getLoyaltyTier(), roomNo,
+                    service.getRoomType(roomNo));
         }
         UIUtils.printSectionLine();
         System.out.println("Total Records: " + guests.getNumberOfEntries());
@@ -217,9 +218,8 @@ public class FrontDeskUI {
         System.out.println("Guest Name      : " + g.getName());
         System.out.println("Phone Number    : " + g.getPhone());
         System.out.println("Loyalty Tier    : " + g.getLoyaltyTier());
-        System.out.println("Room Number     : " + g.getRoomNo());
-        System.out.println("Room Type       : " + service.getRoomType(g.getRoomNo()));
-        System.out.printf("Billing Amount  : RM %.2f%n", g.getBillingAmount());
+        System.out.println("Room Number     : " + service.getGuestCurrentRoom(g.getConfirmationNo()));
+        System.out.println("Room Type       : " + service.getGuestCurrentRoomType(g.getConfirmationNo()));
         UIUtils.printSectionLine();
     }
 

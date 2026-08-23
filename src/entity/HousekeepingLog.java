@@ -7,16 +7,25 @@ import java.io.Serializable;
  * @author Chang Han Yean
  */
 public class HousekeepingLog implements Serializable {
+    public static final String ACTION_UPDATE = "Update";
+    public static final String ACTION_ROLLBACK = "Rollback";
+
     private Room room;
     private String oldStatus;
     private String newStatus;
     private String timestamp;
+    private String action;
 
     public HousekeepingLog(Room room, String oldStatus, String newStatus, String timestamp) {
+        this(room, oldStatus, newStatus, timestamp, ACTION_UPDATE);
+    }
+
+    public HousekeepingLog(Room room, String oldStatus, String newStatus, String timestamp, String action) {
         this.room = room;
         this.oldStatus = oldStatus;
         this.newStatus = newStatus;
         this.timestamp = timestamp;
+        this.action = action;
     }
 
     public Room getRoom() {
@@ -35,9 +44,13 @@ public class HousekeepingLog implements Serializable {
         return timestamp;
     }
 
+    public String getAction() {
+        return action;
+    }
+
     @Override
     public String toString() {
-        return String.format("[%s] Room %s status changed from '%s' to '%s'",
-                timestamp, room.getRoomNumber(), oldStatus, newStatus);
+        return String.format("[%s] Room %s %s from '%s' to '%s'",
+                timestamp, room.getRoomNumber(), action, oldStatus, newStatus);
     }
 }

@@ -42,7 +42,7 @@ public class BookingUI {
                 choice = scanner.nextInt();
                 scanner.nextLine();
             } else {
-                System.out.println("Invalid input! Please enter a number.");
+                UIUtils.printError("Invalid input! Please enter a number.");
                 scanner.nextLine();
                 UIUtils.pressEnterToContinue(scanner);
                 continue;
@@ -81,7 +81,7 @@ public class BookingUI {
                     System.out.println("Returning to Main Menu...");
                     break;
                 default:
-                    System.out.println("Invalid choice. Try again.");
+                    UIUtils.printError("Invalid choice. Try again.");
             }
 
             if (choice != 0) {
@@ -115,6 +115,11 @@ public class BookingUI {
 
         System.out.print("Enter Guest Confirmation No: ");
         String confirmationNo = scanner.nextLine().trim();
+        if (controller.getGuest(confirmationNo) == null) {
+            UIUtils.printError("Guest not found. Add guest first.");
+            return;
+        }
+
         String roomType = promptRoomType();
         if (roomType == null) {
             System.out.println("\nWalk-in booking cancelled.");
@@ -129,7 +134,13 @@ public class BookingUI {
 
         String error = controller.addWalkInRegistration(confirmationNo, roomType, checkOutDate);
         if (error == null) {
-            System.out.println("\nWalk-in booking added and room assigned successfully.");
+            BookingRequest booking = controller.getLatestBooking();
+            System.out.println();
+            if (booking != null) {
+                UIUtils.printSectionLine();
+                printBookingDetail(booking);
+            }
+            System.out.println("Walk-in booking added and room assigned successfully.");
         } else {
             UIUtils.printError(error);
         }
@@ -142,12 +153,17 @@ public class BookingUI {
 
         System.out.print("Enter Guest Confirmation No: ");
         String confirmationNo = scanner.nextLine().trim();
+        if (controller.getGuest(confirmationNo) == null) {
+            UIUtils.printError("Guest not found. Add guest first.");
+            return;
+        }
+
         String roomType = promptRoomType();
         if (roomType == null) {
             System.out.println("\nStandard booking cancelled.");
             return;
         }
-        String checkInDate = promptDate("Enter Check-In Date (YYYY-MM-DD, or 0 to cancel): ");
+        String checkInDate = promptCheckInDate("Enter Check-In Date (YYYY-MM-DD, or 0 to cancel): ");
         if (checkInDate == null) {
             System.out.println("\nStandard booking cancelled.");
             return;
@@ -161,7 +177,13 @@ public class BookingUI {
 
         String error = controller.addStandardBooking(confirmationNo, roomType, checkInDate, checkOutDate);
         if (error == null) {
-            System.out.println("\nStandard booking added to pending queue.");
+            BookingRequest booking = controller.getLatestBooking();
+            System.out.println();
+            if (booking != null) {
+                UIUtils.printSectionLine();
+                printBookingDetail(booking);
+            }
+            System.out.println("Standard booking added to pending queue.");
             System.out.println("Pending Queue Size: " + controller.getPendingQueueSize());
         } else {
             UIUtils.printError(error);
@@ -186,12 +208,12 @@ public class BookingUI {
         }
 
         if (booking.getStatus().equals(BookingController.STATUS_ASSIGNED)) {
+            printBookingDetail(booking);
             System.out.println("Booking assigned successfully.");
-            printBookingDetail(booking);
         } else {
-            System.out.println("The first pending booking cannot be assigned yet.");
-            System.out.println("Reason: No ready and vacant room of requested type is available for the selected date.");
             printBookingDetail(booking);
+            UIUtils.printError("The first pending booking cannot be assigned yet.");
+            UIUtils.printError("Reason: No ready and vacant room of requested type is available for the selected date.");
         }
     }
 
@@ -208,7 +230,7 @@ public class BookingUI {
 
             Integer selected = readIntOption(0, 2);
             if (selected == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 2.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 2.");
                 UIUtils.pressEnterToContinue(scanner);
                 continue;
             }
@@ -226,7 +248,7 @@ public class BookingUI {
                 case 0:
                     break;
                 default:
-                    System.out.println("Invalid choice. Try again.");
+                    UIUtils.printError("Invalid choice. Try again.");
                     UIUtils.pressEnterToContinue(scanner);
             }
         }
@@ -335,7 +357,15 @@ public class BookingUI {
     private void handleCheckOutBooking() {
         UIUtils.clearScreen();
         UIUtils.printHeader("CHECK OUT BOOKING");
-        displayBookingTable(controller.getBookingsByStatus(BookingController.STATUS_CHECKED_IN));
+
+        ListInterface<BookingRequest> checkedInBookings =
+                controller.getSortedCheckedInBookingsForCheckout();
+        if (checkedInBookings.isEmpty()) {
+            System.out.println("No checked-in bookings are available for checkout.");
+            return;
+        }
+
+        displayCheckoutTable(checkedInBookings);
 
         System.out.print("Enter Booking ID to check out: ");
         String bookingId = scanner.nextLine().trim();
@@ -348,10 +378,28 @@ public class BookingUI {
         }
     }
 
+    private void displayCheckoutTable(ListInterface<BookingRequest> bookings) {
+        System.out.printf("%-7s | %-14s | %-6s | %-10s | %-10s%n",
+                "ID", "Guest", "Room", "Check-Out", "Due Status");
+        UIUtils.printSectionLine();
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            System.out.printf("%-7s | %-14s | %-6s | %-10s | %-10s%n",
+                    booking.getBookingId(),
+                    booking.getGuest().getName(),
+                    booking.getAssignedRoomNumber(),
+                    booking.getCheckOutDate(),
+                    controller.getCheckoutDueLabel(booking));
+        }
+        UIUtils.printSectionLine();
+        System.out.println("Total Checked-In Bookings: " + bookings.getNumberOfEntries());
+        System.out.println();
+    }
+
     private void handleCancelBooking() {
         UIUtils.clearScreen();
         UIUtils.printHeader("CANCEL BOOKING");
-        displayBookingTable(controller.getBookingsByStatus(BookingController.FILTER_ALL));
+        displayBookingTable(controller.getCancellableBookings());
 
         System.out.print("Enter Booking ID to cancel: ");
         String bookingId = scanner.nextLine().trim();
@@ -375,7 +423,7 @@ public class BookingUI {
 
             Integer choice = readIntOption(0, 3);
             if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 3.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 3.");
                 continue;
             }
             if (choice == 0) {
@@ -406,7 +454,7 @@ public class BookingUI {
 
             Integer choice = readIntOption(0, 6);
             if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 6.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 6.");
                 continue;
             }
             if (choice == 0) {
@@ -444,7 +492,7 @@ public class BookingUI {
 
             Integer choice = readIntOption(0, 4);
             if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 4.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 4.");
                 continue;
             }
             if (choice == 0) {
@@ -475,7 +523,7 @@ public class BookingUI {
 
             Integer choice = readIntOption(0, 3);
             if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 3.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 3.");
                 continue;
             }
             if (choice == 0) {
@@ -507,6 +555,20 @@ public class BookingUI {
         }
     }
 
+    private String promptCheckInDate(String prompt) {
+        while (true) {
+            String input = promptDate(prompt);
+            if (input == null) {
+                return null;
+            }
+            LocalDate checkInDate = LocalDate.parse(input);
+            if (!checkInDate.isBefore(LocalDate.now())) {
+                return input;
+            }
+            UIUtils.printError("Check-in date cannot be before today.");
+        }
+    }
+
     private String promptCheckOutDate(LocalDate checkInDate, String prompt) {
         while (true) {
             String input = promptDate(prompt);
@@ -527,13 +589,13 @@ public class BookingUI {
             return;
         }
 
-        System.out.printf("%-14s | %-18s | %-14s | %-8s%n",
-                "Confirmation", "Name", "Phone", "Room No");
+        System.out.printf("%-14s | %-18s | %-14s%n",
+                "Confirmation", "Name", "Phone");
         UIUtils.printSectionLine();
         for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
             Guest guest = guests.getEntry(i);
-            System.out.printf("%-14s | %-18s | %-14s | %-8s%n",
-                    guest.getConfirmationNo(), guest.getName(), guest.getPhone(), guest.getRoomNo());
+            System.out.printf("%-14s | %-18s | %-14s%n",
+                    guest.getConfirmationNo(), guest.getName(), guest.getPhone());
         }
         UIUtils.printSectionLine();
     }

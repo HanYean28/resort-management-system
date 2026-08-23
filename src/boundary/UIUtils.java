@@ -7,6 +7,8 @@ import java.util.Scanner;
  */
 
 public class UIUtils {
+    private static final String RED = "\u001B[31m";
+    private static final String RESET = "\u001B[0m";
 
     public static void clearScreen() {
         try {
@@ -41,7 +43,7 @@ public class UIUtils {
     }
 
     public static void printError(String message) {
-        System.out.println("[ERROR] " + message);
+        System.out.println(RED + "[ERROR] " + message + RESET);
     }
 
     private static String centerText(String text, int width) {
