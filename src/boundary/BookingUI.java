@@ -147,7 +147,7 @@ public class BookingUI {
             System.out.println("\nStandard booking cancelled.");
             return;
         }
-        String checkInDate = promptDate("Enter Check-In Date (YYYY-MM-DD, or 0 to cancel): ");
+        String checkInDate = promptCheckInDate("Enter Check-In Date (YYYY-MM-DD, or 0 to cancel): ");
         if (checkInDate == null) {
             System.out.println("\nStandard booking cancelled.");
             return;
@@ -530,6 +530,20 @@ public class BookingUI {
             } catch (Exception e) {
                 UIUtils.printError("Date format must be YYYY-MM-DD.");
             }
+        }
+    }
+
+    private String promptCheckInDate(String prompt) {
+        while (true) {
+            String input = promptDate(prompt);
+            if (input == null) {
+                return null;
+            }
+            LocalDate checkInDate = LocalDate.parse(input);
+            if (!checkInDate.isBefore(LocalDate.now())) {
+                return input;
+            }
+            UIUtils.printError("Check-in date cannot be before today.");
         }
     }
 

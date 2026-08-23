@@ -77,6 +77,9 @@ public class BookingController {
         if (validation != null) {
             return validation;
         }
+        if (hasOverlappingActiveBooking(confirmationNo, checkInDate, checkOutDate)) {
+            return "Guest already has an active booking for this date range.";
+        }
 
         BookingRequest booking = new BookingRequest(generateBookingId(), guest, TYPE_STANDARD,
                 requestedRoomType, checkInDate, checkOutDate, STATUS_PENDING, "N/A", getCurrentTimestamp());
@@ -97,6 +100,9 @@ public class BookingController {
         String validation = validateBookingInput(requestedRoomType, checkInDate, checkOutDate);
         if (validation != null) {
             return validation;
+        }
+        if (hasOverlappingActiveBooking(confirmationNo, checkInDate, checkOutDate)) {
+            return "Guest already has an active booking for this date range.";
         }
 
         BookingRequest booking = new BookingRequest(generateBookingId(), guest, TYPE_WALK_IN,
@@ -392,6 +398,9 @@ public class BookingController {
         try {
             LocalDate checkIn = LocalDate.parse(checkInDate);
             LocalDate checkOut = LocalDate.parse(checkOutDate);
+            if (checkIn.isBefore(LocalDate.now())) {
+                return "Check-in date cannot be before today.";
+            }
             if (!checkOut.isAfter(checkIn)) {
                 return "Check-out date must be after check-in date.";
             }
@@ -434,6 +443,32 @@ public class BookingController {
             }
         }
         return false;
+    }
+
+    private boolean hasOverlappingActiveBooking(String confirmationNo, String checkInDate, String checkOutDate) {
+        LocalDate targetCheckIn = LocalDate.parse(checkInDate);
+        LocalDate targetCheckOut = LocalDate.parse(checkOutDate);
+
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest existing = bookings.getEntry(i);
+            if (!existing.getGuest().getConfirmationNo().equalsIgnoreCase(confirmationNo)
+                    || !isActiveBooking(existing)) {
+                continue;
+            }
+
+            LocalDate existingCheckIn = LocalDate.parse(existing.getCheckInDate());
+            LocalDate existingCheckOut = LocalDate.parse(existing.getCheckOutDate());
+            if (targetCheckIn.isBefore(existingCheckOut) && targetCheckOut.isAfter(existingCheckIn)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isActiveBooking(BookingRequest booking) {
+        return booking.getStatus().equals(STATUS_PENDING)
+                || booking.getStatus().equals(STATUS_ASSIGNED)
+                || booking.getStatus().equals(STATUS_CHECKED_IN);
     }
 
     private ListInterface<Room> loadRoomsFromFile() {
