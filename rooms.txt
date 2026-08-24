@@ -1,8 +1,8 @@
 # roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
-101|Deluxe|Dirty|Vacant|2026-08-16 12:49:46|2026-08-16 12:49:46|N/A
+101|Deluxe|Cleaning In Progress|Vacant|2026-08-23 14:19:06|2026-08-16 12:49:46|N/A
 102|Standard|Dirty|Vacant|2026-08-15 15:03:22|2026-08-15 15:03:22|N/A
 103|Suite|Dirty|Vacant|2026-08-16 12:40:53|2026-08-16 12:40:53|N/A
-104|Deluxe|Ready|Vacant|N/A|N/A|N/A
+104|Deluxe|Dirty|Vacant|2026-08-23 14:18:42|2026-08-23 14:18:42|N/A
 105|Suite|Ready|Vacant|N/A|N/A|N/A
 106|Standard|Ready|Vacant|N/A|N/A|N/A
 107|Deluxe|Ready|Vacant|N/A|N/A|N/A

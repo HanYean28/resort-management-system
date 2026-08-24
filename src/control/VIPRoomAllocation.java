@@ -130,7 +130,7 @@ public class VIPRoomAllocation {
     private void loadRoomData() {
 
         try (BufferedReader reader =
-                new BufferedReader(new FileReader("Room.txt"))) {
+                new BufferedReader(new FileReader("rooms.txt"))) {
 
             String line;
 
@@ -420,8 +420,7 @@ public class VIPRoomAllocation {
      * Returns the createdAt timestamp for a guest's booking
      * by delegating to BookingController.
      *
-     * Used by the UI to display booking date and by the
-     * tiebreaker logic in getSortedWaitingList().
+     * Used by the tiebreaker logic in getSortedWaitingList().
      */
     public String getBookingCreatedAt(String confirmationNo) {
 
@@ -429,8 +428,6 @@ public class VIPRoomAllocation {
             return null;
         }
 
-        // Ask BookingController for all bookings matching
-        // this confirmation number.
         ListInterface<BookingRequest> all =
                 bookingController.getBookingsByStatus(
                         BookingController.FILTER_ALL);
@@ -443,6 +440,38 @@ public class VIPRoomAllocation {
                     && confirmationNo.equals(
                             booking.getGuest().getConfirmationNo())) {
                 return booking.getCreatedAt();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Purpose:
+     * Returns the check-in date for a guest's booking
+     * by delegating to BookingController.
+     *
+     * Used by the UI to display check-in date in the
+     * waiting list and next VIP guest views.
+     */
+    public String getBookingCheckInDate(String confirmationNo) {
+
+        if (confirmationNo == null) {
+            return null;
+        }
+
+        ListInterface<BookingRequest> all =
+                bookingController.getBookingsByStatus(
+                        BookingController.FILTER_ALL);
+
+        for (int i = 1; i <= all.getNumberOfEntries(); i++) {
+
+            BookingRequest booking = all.getEntry(i);
+
+            if (booking != null
+                    && confirmationNo.equals(
+                            booking.getGuest().getConfirmationNo())) {
+                return booking.getCheckInDate();
             }
         }
 
@@ -508,6 +537,10 @@ public class VIPRoomAllocation {
      * Returns all VIP guests from the queue sorted by:
      *   1. Loyalty tier (highest first)
      *   2. Booking createdAt from BookingController (earliest first)
+     *
+     * compare() returns negative when a should come BEFORE b,
+     * so insertion sort naturally produces highest-priority first.
+     * No reverse needed.
      */
     private Guest[] getSortedWaitingList() {
 
@@ -527,9 +560,6 @@ public class VIPRoomAllocation {
             all[j + 1] = key;
         }
 
-        // Ascending result — reverse so highest priority is first.
-        reverse(all);
-
         return all;
     }
 
@@ -537,8 +567,11 @@ public class VIPRoomAllocation {
      * Purpose:
      * Compares two guests for sorting.
      *
-     * Rule 1: Higher tier = higher priority.
-     * Rule 2: Same tier — earlier createdAt wins (from BookingController).
+     * Returns NEGATIVE if a should come BEFORE b (higher priority).
+     * Returns POSITIVE if a should come AFTER b (lower priority).
+     *
+     * Rule 1: Higher tier = higher priority = comes first.
+     * Rule 2: Same tier — earlier createdAt = comes first.
      */
     private int compare(Guest a, Guest b) {
 
@@ -546,19 +579,22 @@ public class VIPRoomAllocation {
         int tierB = getPriority(b.getLoyaltyTier());
 
         if (tierA != tierB) {
+            // Higher tier should come first, so return negative when a > b.
             return tierB - tierA;
         }
 
+        // Same tier — earlier createdAt wins.
         String dateA = getBookingCreatedAt(a.getConfirmationNo());
         String dateB = getBookingCreatedAt(b.getConfirmationNo());
 
         if (dateA == null && dateB == null) return 0;
-        if (dateA == null) return 1;
-        if (dateB == null) return -1;
+        if (dateA == null) return 1;  // a has no date, goes after b
+        if (dateB == null) return -1; // b has no date, a goes first
 
         try {
             LocalDateTime timeA = LocalDateTime.parse(dateA, FORMATTER);
             LocalDateTime timeB = LocalDateTime.parse(dateB, FORMATTER);
+            // Earlier booking = higher priority = negative result = comes first.
             return timeA.compareTo(timeB);
         } catch (DateTimeParseException e) {
             return 0;
@@ -580,24 +616,6 @@ public class VIPRoomAllocation {
             case "GOLD":     return 2;
             case "SILVER":   return 1;
             default:         return 0;
-        }
-    }
-
-    /**
-     * Purpose:
-     * Reverses a Guest array in-place.
-     */
-    private void reverse(Guest[] arr) {
-
-        int left  = 0;
-        int right = arr.length - 1;
-
-        while (left < right) {
-            Guest temp  = arr[left];
-            arr[left]   = arr[right];
-            arr[right]  = temp;
-            left++;
-            right--;
         }
     }
 

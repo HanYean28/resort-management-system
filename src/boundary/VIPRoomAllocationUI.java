@@ -8,11 +8,17 @@ import java.util.Scanner;
 import static boundary.UIUtils.clearScreen;
 import static boundary.UIUtils.pressEnterToContinue;
 
+
 public class VIPRoomAllocationUI {
 
     private Scanner scanner;
     private VIPRoomAllocation controller;
 
+    /**
+     * Purpose:
+     * Creates the VIP Room Allocation UI and initializes
+     * the scanner and controller.
+     */
     public VIPRoomAllocationUI(Scanner scanner) {
         controller = new VIPRoomAllocation();
         this.scanner = scanner;
@@ -101,30 +107,40 @@ public class VIPRoomAllocationUI {
      * and adds the guest into the VIP priority queue.
      */
     private void addVIPBooking() {
-
+ 
         clearScreen();
         System.out.println("\n===== ADD VIP BOOKING =====");
-
+ 
         System.out.print("Enter Name: ");
         String name = scanner.nextLine();
-
+ 
         System.out.print("Enter Phone: ");
         String phone = scanner.nextLine();
-
+ 
         System.out.print(
                 "Enter Loyalty Tier (Diamond, Elite, Platinum, Gold, Silver): "
         );
         String loyaltyTier = scanner.nextLine();
-
+ 
+        while (!loyaltyTier.matches("[a-zA-Z]+")) {
+            System.out.println(
+                    "Invalid input. Loyalty tier must contain letters only."
+            );
+            System.out.print(
+                    "Enter Loyalty Tier (Diamond, Elite, Platinum, Gold, Silver): "
+            );
+            loyaltyTier = scanner.nextLine();
+        }
+ 
         System.out.print("Enter Requested Room Type (Standard, Deluxe, Suite): ");
         String requestedRoomType = scanner.nextLine();
-
+ 
         System.out.print("Enter Check-In Date (yyyy-MM-dd): ");
         String checkInDate = scanner.nextLine();
-
+ 
         System.out.print("Enter Check-Out Date (yyyy-MM-dd): ");
         String checkOutDate = scanner.nextLine();
-
+ 
         /*
          * addVIPGuest now delegates guest creation and booking
          * persistence entirely to BookingController.
@@ -138,7 +154,7 @@ public class VIPRoomAllocationUI {
                 checkInDate,
                 checkOutDate
         );
-
+ 
         if (error != null) {
             System.out.println("\nFailed to add VIP booking: " + error);
         } else {
@@ -146,7 +162,7 @@ public class VIPRoomAllocationUI {
                     "\nVIP booking added successfully."
             );
         }
-
+ 
         pressEnterToContinue(scanner);
     }
 
@@ -224,39 +240,41 @@ public class VIPRoomAllocationUI {
      * 3. Allocate the room
      */
     private void allocateRoom() {
-
+ 
         clearScreen();
-
+ 
         /*
          * The guest at the front of the priority queue
          * is the guest who receives the next allocation.
          */
         Guest nextGuest = controller.getNextVIPGuest();
-
+ 
         if (nextGuest == null) {
-
+ 
             System.out.println(
                     "No VIP guests in the waiting list."
             );
-
+ 
+            pressEnterToContinue(scanner);
             return;
         }
-
+ 
         /*
          * Get rooms whose status is currently "Ready".
          */
         Room[] availableRooms =
                 controller.getAvailableRooms();
-
+ 
         if (availableRooms.length == 0) {
-
+ 
             System.out.println(
                     "No available rooms."
             );
-
+ 
+            pressEnterToContinue(scanner);
             return;
         }
-
+ 
         /*
          * Display the VIP guest who has the highest
          * allocation priority.
@@ -264,54 +282,55 @@ public class VIPRoomAllocationUI {
         System.out.println(
                 "\n===== GUEST RECEIVING PRIORITY ====="
         );
-
+ 
         displayGuestDetails(nextGuest);
-
+ 
         /*
          * Display all available rooms.
          */
         System.out.println(
                 "\n===== AVAILABLE ROOMS ====="
         );
-
+ 
         for (int i = 0; i < availableRooms.length; i++) {
-
+ 
             System.out.println(
                     "[" + (i + 1) + "] "
                     + availableRooms[i]
             );
         }
-
+ 
         /*
          * Ask the user to select a room.
          */
         System.out.print(
                 "Select room: "
         );
-
+ 
         int selection = scanner.nextInt();
         scanner.nextLine();
-
+ 
         /*
          * Validate the user's room selection.
          */
         if (selection < 1 ||
                 selection > availableRooms.length) {
-
+ 
             System.out.println(
                     "Invalid room selection."
             );
-
+ 
+            pressEnterToContinue(scanner);
             return;
         }
-
+ 
         /*
          * Obtain the room number selected by the user.
          */
         String selectedRoom =
                 availableRooms[selection - 1]
                         .getRoomNumber();
-
+ 
         /*
          * Controller performs the actual allocation.
          *
@@ -320,16 +339,17 @@ public class VIPRoomAllocationUI {
          */
         Guest allocatedGuest =
                 controller.allocateRoom(selectedRoom);
-
+ 
         if (allocatedGuest == null) {
-
+ 
             System.out.println(
                     "Room allocation failed."
             );
-
+ 
+            pressEnterToContinue(scanner);
             return;
         }
-
+ 
         /*
          * Display the result of the successful allocation.
          */
@@ -337,9 +357,9 @@ public class VIPRoomAllocationUI {
         System.out.println(
                 "===== ROOM ALLOCATED SUCCESSFULLY ====="
         );
-
+ 
         displayGuestDetails(allocatedGuest);
-
+ 
         pressEnterToContinue(scanner);
     }
 
@@ -453,13 +473,13 @@ public class VIPRoomAllocationUI {
                 + guest.getRoomNo()
         );
 
-        // Show booking date from bookings.txt for transparency.
-        String createdAt =
-                controller.getBookingCreatedAt(guest.getConfirmationNo());
+        // Show check-in date from bookings.txt.
+        String checkInDate =
+                controller.getBookingCheckInDate(guest.getConfirmationNo());
 
         System.out.println(
-                "Booking Date    : "
-                + (createdAt != null ? createdAt : "N/A")
+                "Check-In Date   : "
+                + (checkInDate != null ? checkInDate : "N/A")
         );
     }
 }
