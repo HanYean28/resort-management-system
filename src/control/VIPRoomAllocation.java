@@ -90,7 +90,7 @@ public class VIPRoomAllocation {
 
                 String[] data = line.split("\\|");
 
-                if (data.length != 6) {
+                if (data.length < 4) {
                     continue;
                 }
 
@@ -98,16 +98,12 @@ public class VIPRoomAllocation {
                 String name           = data[1].trim();
                 String phone          = data[2].trim();
                 String loyaltyTier    = data[3].trim();
-                double billingAmount  = Double.parseDouble(data[4].trim());
-                String roomNo         = data[5].trim();
 
                 Guest guest = new Guest(
                         confirmationNo,
                         name,
                         phone,
-                        loyaltyTier,
-                        billingAmount,
-                        roomNo
+                        loyaltyTier
                 );
 
                 addGuest(guest);
@@ -117,8 +113,6 @@ public class VIPRoomAllocation {
 
         } catch (IOException e) {
             System.out.println("Error loading guests.txt: " + e.getMessage());
-        } catch (NumberFormatException e) {
-            System.out.println("Invalid billing amount in guests.txt.");
         }
     }
 
@@ -341,11 +335,14 @@ public class VIPRoomAllocation {
         // Remove this specific guest from the queue.
         vipQueue.removeByConfirmationNo(nextGuest.getConfirmationNo());
 
-        // Assign the selected room.
-        nextGuest.setRoomNo(selectedRoom.getRoomNumber());
-
-        // Update room status.
-        selectedRoom.setCleanlinessStatus("Occupied");
+        String error = bookingController.assignRoomToBookingForGuest(
+                nextGuest.getConfirmationNo(),
+                selectedRoom.getRoomNumber()
+        );
+        if (error != null) {
+            vipQueue.add(nextGuest);
+            return null;
+        }
 
         return nextGuest;
     }
@@ -446,18 +443,10 @@ public class VIPRoomAllocation {
         return null;
     }
 
-    /**
-     * Purpose:
-     * Returns the check-in date for a guest's booking
-     * by delegating to BookingController.
-     *
-     * Used by the UI to display check-in date in the
-     * waiting list and next VIP guest views.
-     */
-    public String getBookingCheckInDate(String confirmationNo) {
+    public String getGuestCurrentRoom(String confirmationNo) {
 
         if (confirmationNo == null) {
-            return null;
+            return "N/A";
         }
 
         ListInterface<BookingRequest> all =
@@ -470,12 +459,14 @@ public class VIPRoomAllocation {
 
             if (booking != null
                     && confirmationNo.equals(
-                            booking.getGuest().getConfirmationNo())) {
-                return booking.getCheckInDate();
+                            booking.getGuest().getConfirmationNo())
+                    && (BookingController.STATUS_ASSIGNED.equals(booking.getStatus())
+                            || BookingController.STATUS_CHECKED_IN.equals(booking.getStatus()))) {
+                return booking.getAssignedRoomNumber();
             }
         }
 
-        return null;
+        return "N/A";
     }
 
     // -------------------------------------------------------
@@ -495,7 +486,7 @@ public class VIPRoomAllocation {
                 new BufferedWriter(new FileWriter("guests.txt"))) {
 
             writer.write(
-                    "# confirmationNo|name|phone|loyaltyTier|billingAmount|roomNo");
+                    "# confirmationNo|name|phone|loyaltyTier");
             writer.newLine();
 
             for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
@@ -506,18 +497,11 @@ public class VIPRoomAllocation {
                     continue;
                 }
 
-                String roomNo = (g.getRoomNo() == null
-                        || g.getRoomNo().trim().isEmpty())
-                        ? "N/A"
-                        : g.getRoomNo();
-
                 writer.write(
                         g.getConfirmationNo() + "|" +
                         g.getName()           + "|" +
                         g.getPhone()          + "|" +
-                        g.getLoyaltyTier()    + "|" +
-                        g.getBillingAmount()  + "|" +
-                        roomNo
+                        g.getLoyaltyTier()
                 );
 
                 writer.newLine();

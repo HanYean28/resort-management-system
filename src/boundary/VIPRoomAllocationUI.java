@@ -73,9 +73,7 @@ public class VIPRoomAllocationUI {
                     break;
 
                 default:
-                    System.out.println(
-                            "Invalid choice. Please try again."
-                    );
+                    UIUtils.printError("Invalid choice. Please try again.");
             }
 
         } while (choice != 7);
@@ -156,7 +154,7 @@ public class VIPRoomAllocationUI {
         );
  
         if (error != null) {
-            System.out.println("\nFailed to add VIP booking: " + error);
+            UIUtils.printError("Failed to add VIP booking: " + error);
         } else {
             System.out.println(
                     "\nVIP booking added successfully."
@@ -383,9 +381,7 @@ public class VIPRoomAllocationUI {
 
         if (guest == null) {
 
-            System.out.println(
-                    "Guest not found in VIP waiting list."
-            );
+            UIUtils.printError("Guest not found in VIP waiting list.");
 
         } else {
 
@@ -425,9 +421,7 @@ public class VIPRoomAllocationUI {
 
         } else {
 
-            System.out.println(
-                    "Guest not found."
-            );
+            UIUtils.printError("Guest not found.");
         }
 
         pressEnterToContinue(scanner);
@@ -464,13 +458,8 @@ public class VIPRoomAllocationUI {
         );
 
         System.out.println(
-                "Billing Amount  : RM "
-                + guest.getBillingAmount()
-        );
-
-        System.out.println(
                 "Room No         : "
-                + guest.getRoomNo()
+                + controller.getGuestCurrentRoom(guest.getConfirmationNo())
         );
 
         // Show check-in date from bookings.txt.

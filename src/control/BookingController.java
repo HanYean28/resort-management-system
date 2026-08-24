@@ -54,7 +54,7 @@ public class BookingController {
         }
 
         String confirmationNo = generateConfirmationNo();
-        frontDeskService.addGuest(new Guest(confirmationNo, name, phone, "NONE", 0.0, "N/A"));
+        frontDeskService.addGuest(new Guest(confirmationNo, name, phone, "NONE"));
         return frontDeskService.searchByConfirmationNumber(confirmationNo);
     }
 
@@ -64,6 +64,13 @@ public class BookingController {
 
     public ListInterface<Guest> getAllGuests() {
         return frontDeskService.getAllGuestsSorted();
+    }
+
+    public BookingRequest getLatestBooking() {
+        if (bookings.isEmpty()) {
+            return null;
+        }
+        return bookings.getEntry(bookings.getNumberOfEntries());
     }
 
     public String addStandardBooking(String confirmationNo, String requestedRoomType,
@@ -76,6 +83,9 @@ public class BookingController {
         String validation = validateBookingInput(requestedRoomType, checkInDate, checkOutDate);
         if (validation != null) {
             return validation;
+        }
+        if (hasOverlappingActiveBooking(confirmationNo, checkInDate, checkOutDate)) {
+            return "Guest already has an active booking for this date range.";
         }
 
         BookingRequest booking = new BookingRequest(generateBookingId(), guest, TYPE_STANDARD,
@@ -98,9 +108,17 @@ public class BookingController {
         if (validation != null) {
             return validation;
         }
+        if (hasOverlappingActiveBooking(confirmationNo, checkInDate, checkOutDate)) {
+            return "Guest already has an active booking for this date range.";
+        }
 
         BookingRequest booking = new BookingRequest(generateBookingId(), guest, TYPE_WALK_IN,
                 requestedRoomType, checkInDate, checkOutDate, STATUS_PENDING, "N/A", getCurrentTimestamp());
+        if (!hasSpareRoomAfterPendingStandardBookings(booking)) {
+            return "No " + requestedRoomType
+                    + " room is available for walk-in booking because pending standard bookings are reserved first.";
+        }
+
         String roomNumber = findAvailableRoom(booking);
         if (roomNumber == null) {
             return "No ready " + requestedRoomType + " room is available for this date.";
@@ -108,7 +126,6 @@ public class BookingController {
 
         booking.setAssignedRoomNumber(roomNumber);
         booking.setStatus(STATUS_CHECKED_IN);
-        frontDeskService.updateGuestRoom(guest.getConfirmationNo(), roomNumber);
         bookings.add(booking);
         updateRoomOccupancy(roomNumber, "Occupied");
         generatePaidBill(booking);
@@ -150,16 +167,36 @@ public class BookingController {
             return "Guest can only check in from check-in date until before check-out date.";
         }
 
-        if (!isRoomVacant(booking.getAssignedRoomNumber())) {
-            return "Assigned room is currently occupied.";
+        String roomAvailabilityError = validateAssignedRoomForCheckIn(booking.getAssignedRoomNumber());
+        if (roomAvailabilityError != null) {
+            return roomAvailabilityError;
         }
 
         booking.setStatus(STATUS_CHECKED_IN);
-        frontDeskService.updateGuestRoom(booking.getGuest().getConfirmationNo(), booking.getAssignedRoomNumber());
         updateRoomOccupancy(booking.getAssignedRoomNumber(), "Occupied");
         generatePaidBill(booking);
         saveBookingsToFile();
         return null;
+    }
+
+    public String assignRoomToBookingForGuest(String confirmationNo, String roomNumber) {
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (booking.getGuest().getConfirmationNo().equalsIgnoreCase(confirmationNo)
+                    && (booking.getStatus().equals(STATUS_PENDING)
+                            || booking.getStatus().equals(STATUS_ASSIGNED))) {
+                if (hasDateClash(roomNumber, booking)) {
+                    return "Selected room is already assigned for this booking date.";
+                }
+
+                booking.setAssignedRoomNumber(roomNumber);
+                booking.setStatus(STATUS_ASSIGNED);
+                rebuildPendingQueue();
+                saveBookingsToFile();
+                return null;
+            }
+        }
+        return "No pending booking found for this guest.";
     }
 
     public String checkOutBooking(String bookingId) {
@@ -172,7 +209,6 @@ public class BookingController {
         }
 
         booking.setStatus(STATUS_CHECKED_OUT);
-        frontDeskService.updateGuestRoom(booking.getGuest().getConfirmationNo(), "N/A");
         markRoomDirtyAfterCheckout(booking.getAssignedRoomNumber());
         saveBookingsToFile();
         return null;
@@ -186,13 +222,14 @@ public class BookingController {
         if (booking.getStatus().equals(STATUS_CANCELLED)) {
             return "Booking is already cancelled.";
         }
+        if (booking.getStatus().equals(STATUS_CHECKED_IN)) {
+            return "Checked-in bookings cannot be cancelled. Please check out the guest instead.";
+        }
+        if (booking.getStatus().equals(STATUS_CHECKED_OUT)) {
+            return "Checked-out bookings are completed records and cannot be cancelled.";
+        }
 
         booking.setStatus(STATUS_CANCELLED);
-        if (booking.getGuest().getRoomNo() != null
-                && booking.getGuest().getRoomNo().equalsIgnoreCase(booking.getAssignedRoomNumber())) {
-            updateRoomOccupancy(booking.getAssignedRoomNumber(), "Vacant");
-            frontDeskService.updateGuestRoom(booking.getGuest().getConfirmationNo(), "N/A");
-        }
         rebuildPendingQueue();
         saveBookingsToFile();
         return null;
@@ -230,6 +267,36 @@ public class BookingController {
             }
         }
         return results;
+    }
+
+    public ListInterface<BookingRequest> getCancellableBookings() {
+        ListInterface<BookingRequest> results = new ArrayList<>();
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (booking.getStatus().equals(STATUS_PENDING)
+                    || booking.getStatus().equals(STATUS_ASSIGNED)) {
+                results.add(booking);
+            }
+        }
+        return results;
+    }
+
+    public ListInterface<BookingRequest> getSortedCheckedInBookingsForCheckout() {
+        ListInterface<BookingRequest> results = getBookingsByStatus(STATUS_CHECKED_IN);
+        insertionSortBookingsByCheckoutDue(results);
+        return results;
+    }
+
+    public String getCheckoutDueLabel(BookingRequest booking) {
+        LocalDate today = LocalDate.now();
+        LocalDate checkOutDate = LocalDate.parse(booking.getCheckOutDate());
+        if (checkOutDate.isBefore(today)) {
+            return "Overdue";
+        }
+        if (checkOutDate.isEqual(today)) {
+            return "Due Today";
+        }
+        return "Not Due";
     }
 
     public ListInterface<BookingRequest> generateBookingReport(String bookingTypeFilter,
@@ -344,6 +411,9 @@ public class BookingController {
         try {
             LocalDate checkIn = LocalDate.parse(checkInDate);
             LocalDate checkOut = LocalDate.parse(checkOutDate);
+            if (checkIn.isBefore(LocalDate.now())) {
+                return "Check-in date cannot be before today.";
+            }
             if (!checkOut.isAfter(checkIn)) {
                 return "Check-out date must be after check-in date.";
             }
@@ -367,6 +437,41 @@ public class BookingController {
         return null;
     }
 
+    private boolean hasSpareRoomAfterPendingStandardBookings(BookingRequest walkInBooking) {
+        int availableRoomCount = countAvailableRoomsForBooking(walkInBooking);
+        int protectedPendingCount = countPendingStandardBookingsToProtect(walkInBooking);
+        return availableRoomCount > protectedPendingCount;
+    }
+
+    private int countAvailableRoomsForBooking(BookingRequest targetBooking) {
+        int count = 0;
+        ListInterface<Room> rooms = loadRoomsFromFile();
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            Room room = rooms.getEntry(i);
+            if (room.getRoomType().equalsIgnoreCase(targetBooking.getRequestedRoomType())
+                    && room.getCleanlinessStatus().equalsIgnoreCase("Ready")
+                    && room.getOccupancyStatus().equalsIgnoreCase("Vacant")
+                    && !hasDateClash(room.getRoomNumber(), targetBooking)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private int countPendingStandardBookingsToProtect(BookingRequest walkInBooking) {
+        int count = 0;
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (booking.getBookingType().equals(TYPE_STANDARD)
+                    && booking.getStatus().equals(STATUS_PENDING)
+                    && booking.getRequestedRoomType().equalsIgnoreCase(walkInBooking.getRequestedRoomType())
+                    && isDateOverlap(booking, walkInBooking)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     private boolean hasDateClash(String roomNumber, BookingRequest targetBooking) {
         LocalDate targetCheckIn = LocalDate.parse(targetBooking.getCheckInDate());
         LocalDate targetCheckOut = LocalDate.parse(targetBooking.getCheckOutDate());
@@ -386,6 +491,40 @@ public class BookingController {
             }
         }
         return false;
+    }
+
+    private boolean hasOverlappingActiveBooking(String confirmationNo, String checkInDate, String checkOutDate) {
+        LocalDate targetCheckIn = LocalDate.parse(checkInDate);
+        LocalDate targetCheckOut = LocalDate.parse(checkOutDate);
+
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest existing = bookings.getEntry(i);
+            if (!existing.getGuest().getConfirmationNo().equalsIgnoreCase(confirmationNo)
+                    || !isActiveBooking(existing)) {
+                continue;
+            }
+
+            LocalDate existingCheckIn = LocalDate.parse(existing.getCheckInDate());
+            LocalDate existingCheckOut = LocalDate.parse(existing.getCheckOutDate());
+            if (targetCheckIn.isBefore(existingCheckOut) && targetCheckOut.isAfter(existingCheckIn)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isDateOverlap(BookingRequest first, BookingRequest second) {
+        LocalDate firstCheckIn = LocalDate.parse(first.getCheckInDate());
+        LocalDate firstCheckOut = LocalDate.parse(first.getCheckOutDate());
+        LocalDate secondCheckIn = LocalDate.parse(second.getCheckInDate());
+        LocalDate secondCheckOut = LocalDate.parse(second.getCheckOutDate());
+        return firstCheckIn.isBefore(secondCheckOut) && firstCheckOut.isAfter(secondCheckIn);
+    }
+
+    private boolean isActiveBooking(BookingRequest booking) {
+        return booking.getStatus().equals(STATUS_PENDING)
+                || booking.getStatus().equals(STATUS_ASSIGNED)
+                || booking.getStatus().equals(STATUS_CHECKED_IN);
     }
 
     private ListInterface<Room> loadRoomsFromFile() {
@@ -477,6 +616,42 @@ public class BookingController {
         return 6;
     }
 
+    private void insertionSortBookingsByCheckoutDue(ListInterface<BookingRequest> list) {
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
+            BookingRequest key = list.getEntry(i);
+            int j = i - 1;
+            while (j >= 1 && compareBookingsByCheckoutDue(list.getEntry(j), key) > 0) {
+                list.replace(j + 1, list.getEntry(j));
+                j--;
+            }
+            list.replace(j + 1, key);
+        }
+    }
+
+    private int compareBookingsByCheckoutDue(BookingRequest left, BookingRequest right) {
+        int dueCompare = getCheckoutDueOrder(left) - getCheckoutDueOrder(right);
+        if (dueCompare != 0) {
+            return dueCompare;
+        }
+
+        int dateCompare = left.getCheckOutDate().compareTo(right.getCheckOutDate());
+        if (dateCompare != 0) {
+            return dateCompare;
+        }
+        return left.getBookingId().compareToIgnoreCase(right.getBookingId());
+    }
+
+    private int getCheckoutDueOrder(BookingRequest booking) {
+        String label = getCheckoutDueLabel(booking);
+        if (label.equals("Overdue")) {
+            return 1;
+        }
+        if (label.equals("Due Today")) {
+            return 2;
+        }
+        return 3;
+    }
+
     private void insertionSortDemandRowsByRequests(ListInterface<RoomTypeDemandRow> list) {
         for (int i = 2; i <= list.getNumberOfEntries(); i++) {
             RoomTypeDemandRow key = list.getEntry(i);
@@ -514,6 +689,24 @@ public class BookingController {
             }
         }
         return false;
+    }
+
+    private String validateAssignedRoomForCheckIn(String roomNumber) {
+        ListInterface<Room> rooms = loadRoomsFromFile();
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            Room room = rooms.getEntry(i);
+            if (room.getRoomNumber().equalsIgnoreCase(roomNumber)) {
+                if (!room.getOccupancyStatus().equalsIgnoreCase("Vacant")) {
+                    return "Assigned room is currently occupied.";
+                }
+                if (!room.getCleanlinessStatus().equalsIgnoreCase("Ready")) {
+                    return "Assigned room is not ready for check-in. Current cleaning status: "
+                            + room.getCleanlinessStatus() + ".";
+                }
+                return null;
+            }
+        }
+        return "Assigned room record was not found.";
     }
 
     private void updateRoomOccupancy(String roomNumber, String occupancyStatus) {

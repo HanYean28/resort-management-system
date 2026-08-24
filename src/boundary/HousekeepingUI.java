@@ -38,7 +38,7 @@ public class HousekeepingUI {
                 choice = scanner.nextInt();
                 scanner.nextLine();
             } else {
-                System.out.println("Invalid input! Please enter a number.");
+                UIUtils.printError("Invalid input! Please enter a number.");
                 scanner.nextLine();
                 UIUtils.pressEnterToContinue(scanner);
                 continue;
@@ -68,7 +68,7 @@ public class HousekeepingUI {
                     System.out.println("Returning to Main Menu...");
                     break;
                 default:
-                    System.out.println("Invalid choice. Try again.");
+                    UIUtils.printError("Invalid choice. Try again.");
             }
 
             if (choice != 0) {
@@ -224,15 +224,16 @@ public class HousekeepingUI {
             return;
         }
 
-        System.out.printf("%-4s | %-6s | %-19s | %-22s | %-22s%n",
-                "No.", "Room", "Timestamp", "Old Status", "New Status");
+        System.out.printf("%-4s | %-6s | %-19s | %-8s | %-22s | %-22s%n",
+                "No.", "Room", "Timestamp", "Action", "Old Status", "New Status");
         UIUtils.printSectionLine();
         for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
             HousekeepingLog log = logs.getEntry(i);
-            System.out.printf("%-4d | %-6s | %-19s | %-22s | %-22s%n",
+            System.out.printf("%-4d | %-6s | %-19s | %-8s | %-22s | %-22s%n",
                     i,
                     log.getRoom().getRoomNumber(),
                     log.getTimestamp(),
+                    log.getAction(),
                     log.getOldStatus(),
                     log.getNewStatus());
         }
@@ -252,7 +253,7 @@ public class HousekeepingUI {
 
             Integer selected = readIntOption(0, 2);
             if (selected == null) {
-                System.out.println("\nInvalid input! Please enter a number between 0 and 2.");
+                UIUtils.printError("Invalid input! Please enter a number between 0 and 2.");
                 UIUtils.pressEnterToContinue(scanner);
                 continue;
             }
@@ -270,7 +271,7 @@ public class HousekeepingUI {
                 case 0:
                     break;
                 default:
-                    System.out.println("Invalid choice. Try again.");
+                    UIUtils.printError("Invalid choice. Try again.");
                     UIUtils.pressEnterToContinue(scanner);
             }
         }
@@ -386,7 +387,7 @@ public class HousekeepingUI {
 
             Integer choice = readIntOption(0, 5);
             if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 5.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 5.");
                 continue;
             }
             if (choice == 0) {
@@ -421,7 +422,7 @@ public class HousekeepingUI {
 
             Integer choice = readIntOption(0, 4);
             if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 4.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 4.");
                 continue;
             }
             if (choice == 0) {
@@ -454,7 +455,7 @@ public class HousekeepingUI {
 
             Integer choice = readIntOption(0, 5);
             if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 5.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 5.");
                 continue;
             }
             if (choice == 0) {
@@ -487,7 +488,7 @@ public class HousekeepingUI {
 
             Integer choice = readIntOption(0, 2);
             if (choice == null) {
-                System.out.println("\nInvalid choice! Please enter a number between 0 and 2.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 2.");
                 continue;
             }
             if (choice == 0) {
@@ -533,15 +534,16 @@ public class HousekeepingUI {
             return;
         }
 
-        System.out.printf("%-4s | %-6s | %-19s | %-22s | %-22s%n",
-                "No.", "Room", "Timestamp", "Old Status", "New Status");
+        System.out.printf("%-4s | %-6s | %-19s | %-8s | %-22s | %-22s%n",
+                "No.", "Room", "Timestamp", "Action", "Old Status", "New Status");
         UIUtils.printSectionLine();
         for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
             HousekeepingLog log = logs.getEntry(i);
-            System.out.printf("%-4d | %-6s | %-19s | %-22s | %-22s%n",
+            System.out.printf("%-4d | %-6s | %-19s | %-8s | %-22s | %-22s%n",
                     i,
                     log.getRoom().getRoomNumber(),
                     log.getTimestamp(),
+                    log.getAction(),
                     log.getOldStatus(),
                     log.getNewStatus());
         }
