@@ -22,6 +22,8 @@ import entity.Guest;
  * Every public method signature is unchanged — the rest of
  * the codebase (VIPRoomAllocation, UI, Simulation) does not
  * need any modification.
+ *
+ * @author Lim How Voon
  */
 public class ArrayPriorityQueue {
 
@@ -32,9 +34,7 @@ public class ArrayPriorityQueue {
     // -------------------------------------------------------
 
     /**
-     * Purpose:
-     * Creates an empty VIP priority queue backed by a
-     * BinaryHeap.
+     * Creates an empty VIP priority queue backed by a BinaryHeap.
      *
      * The comparator passed to BinaryHeap defines priority:
      * a guest with a higher tier value is placed closer
@@ -44,24 +44,24 @@ public class ArrayPriorityQueue {
 
         heap = new BinaryHeap<>((a, b) ->
                 getPriority(a.getLoyaltyTier())
-                - getPriority(b.getLoyaltyTier())
+              - getPriority(b.getLoyaltyTier())
         );
     }
 
     // -------------------------------------------------------
-    // Public methods (signatures unchanged)
+    // Public methods
     // -------------------------------------------------------
 
     /**
-     * Purpose:
      * Adds a guest into the priority queue.
      *
-     * The BinaryHeap's insert() places the guest at the
-     * next leaf, then bubbles it UP the tree until its
-     * priority is correctly positioned.
+     * The BinaryHeap's insert() places the guest at the next leaf,
+     * then bubbles it UP the tree until correctly positioned.
      *
-     * This replaces the old linear scan-and-insert into
-     * ArrayList — insertion is now O(log n) instead of O(n).
+     * O(log n)
+     *
+     * @param guest the VIP guest to enqueue
+     * @throws IllegalArgumentException if guest is null
      */
     public void add(Guest guest) {
 
@@ -73,13 +73,14 @@ public class ArrayPriorityQueue {
     }
 
     /**
-     * Purpose:
-     * Removes and returns the highest-priority guest
-     * from the front of the queue.
+     * Removes and returns the highest-priority guest from the queue.
      *
-     * The BinaryHeap's removeMax() takes the root (highest
-     * priority), moves the last leaf to the root, then
-     * bubbles it DOWN until heap order is restored.
+     * BinaryHeap.removeMax() takes the root, moves the last leaf
+     * to the root, then bubbles it DOWN to restore heap order.
+     *
+     * O(log n)
+     *
+     * @return the highest-tier guest waiting, or null if the queue is empty
      */
     public Guest remove() {
 
@@ -87,11 +88,11 @@ public class ArrayPriorityQueue {
     }
 
     /**
-     * Purpose:
-     * Returns the highest-priority guest without
-     * removing the guest from the queue.
+     * Returns the highest-priority guest without removing them.
      *
-     * Direct O(1) root access in the heap.
+     * O(1) — direct root access.
+     *
+     * @return the highest-tier guest, or null if the queue is empty
      */
     public Guest peek() {
 
@@ -99,13 +100,15 @@ public class ArrayPriorityQueue {
     }
 
     /**
-     * Purpose:
-     * Removes a guest from the queue using
-     * the guest's confirmation number.
+     * Removes a guest from the queue by their confirmation number.
      *
-     * Scans the heap to find the matching guest,
-     * then delegates removal to BinaryHeap.remove()
-     * which restores heap order after deletion.
+     * Scans the heap to find the matching guest, then delegates
+     * removal to BinaryHeap.remove() which restores heap order.
+     *
+     * O(n) to locate + O(log n) to reheapify
+     *
+     * @param confirmationNo the 8-digit confirmation number to search for
+     * @return true if the guest was found and removed; false otherwise
      */
     public boolean removeByConfirmationNo(String confirmationNo) {
 
@@ -123,11 +126,15 @@ public class ArrayPriorityQueue {
     }
 
     /**
-     * Purpose:
      * Searches for a guest using their confirmation number.
      *
-     * Uses toSortedArray() to get all guests, then scans
-     * for a matching confirmation number.
+     * Uses getAll() to retrieve guests in priority order,
+     * then performs a linear scan for the matching number.
+     *
+     * O(n)
+     *
+     * @param confirmationNo the confirmation number to search for
+     * @return the matching Guest, or null if not found
      */
     public Guest find(String confirmationNo) {
 
@@ -138,10 +145,8 @@ public class ArrayPriorityQueue {
         Guest[] all = getAll();
 
         for (Guest guest : all) {
-
             if (guest != null
-                    && confirmationNo.equals(
-                            guest.getConfirmationNo())) {
+                    && confirmationNo.equals(guest.getConfirmationNo())) {
                 return guest;
             }
         }
@@ -150,26 +155,26 @@ public class ArrayPriorityQueue {
     }
 
     /**
-     * Purpose:
-     * Returns all guests currently in the queue
-     * in priority order (highest first) without
-     * removing them.
+     * Returns all guests in descending priority order without
+     * removing them from the queue.
      *
-     * Delegates to BinaryHeap.toSortedArray() which
-     * extracts from a temporary copy of the heap so
-     * the real queue is not disturbed.
+     * Delegates to BinaryHeap.toSortedArray() which works on a
+     * temporary copy — the real queue is untouched.
+     *
+     * O(n log n)
+     *
+     * @return array of Guest objects ordered highest-tier first
      */
     public Guest[] getAll() {
 
         Guest[] result = new Guest[heap.size()];
-
         return heap.toSortedArray(result);
     }
 
     /**
-     * Purpose:
-     * Returns the number of guests currently
-     * waiting in the VIP queue.
+     * Returns the number of guests currently waiting in the VIP queue.
+     *
+     * @return current queue size
      */
     public int size() {
 
@@ -177,8 +182,9 @@ public class ArrayPriorityQueue {
     }
 
     /**
-     * Purpose:
-     * Checks whether the VIP queue is empty.
+     * Returns true if no guests are waiting in the VIP queue.
+     *
+     * @return true if empty
      */
     public boolean isEmpty() {
 
@@ -186,7 +192,6 @@ public class ArrayPriorityQueue {
     }
 
     /**
-     * Purpose:
      * Removes all guests from the VIP queue.
      */
     public void clear() {
@@ -199,11 +204,19 @@ public class ArrayPriorityQueue {
     // -------------------------------------------------------
 
     /**
-     * Purpose:
-     * Converts a loyalty tier into a numerical priority
-     * used by the BinaryHeap comparator.
+     * Converts a loyalty tier string into a numeric priority.
      *
-     * Higher number = higher priority = closer to root.
+     * Higher number = higher priority = closer to the heap root.
+     *
+     * Diamond  → 5  (highest)
+     * Elite    → 4
+     * Platinum → 3
+     * Gold     → 2
+     * Silver   → 1
+     * None     → 0  (lowest)
+     *
+     * @param loyaltyTier the tier string from Guest.getLoyaltyTier()
+     * @return numeric priority (0–5)
      */
     private int getPriority(String loyaltyTier) {
 
@@ -213,26 +226,13 @@ public class ArrayPriorityQueue {
 
         switch (loyaltyTier.toUpperCase()) {
 
-            case "DIAMOND":
-                return 5;
-
-            case "ELITE":
-                return 4;
-
-            case "PLATINUM":
-                return 3;
-
-            case "GOLD":
-                return 2;
-
-            case "SILVER":
-                return 1;
-
-            case "NONE":
-                return 0;
-
-            default:
-                return 0;
+            case "DIAMOND":  return 5;
+            case "ELITE":    return 4;
+            case "PLATINUM": return 3;
+            case "GOLD":     return 2;
+            case "SILVER":   return 1;
+            case "NONE":     return 0;
+            default:         return 0;
         }
     }
 }
