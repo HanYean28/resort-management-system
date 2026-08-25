@@ -12,6 +12,7 @@ import java.io.BufferedWriter;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.time.LocalDate;
 import java.util.Iterator;
 
 /**
@@ -26,6 +27,7 @@ import java.util.Iterator;
 public class FrontDeskService {
     private static final String DATA_FILE = "guests.txt";
     private static final String ROOMS_FILE = "rooms.txt";
+    private static final String BOOKINGS_FILE = "bookings.txt";
     private static final String BILLING_FILE = "billing.txt";
 
     private BinarySearchTreeInterface<Guest> guestTree;
@@ -157,13 +159,52 @@ public class FrontDeskService {
         for (int i = 1; i <= allRooms.getNumberOfEntries(); i++) {
             Room room = allRooms.getEntry(i);
             if (room.getCleanlinessStatus().equalsIgnoreCase("Ready")
-                    && room.getOccupancyStatus().equalsIgnoreCase("Vacant")) {
+                    && room.getOccupancyStatus().equalsIgnoreCase("Vacant")
+                    && !hasActiveBookingToday(room.getRoomNumber())) {
                 available.add(room);
             }
         }
 
         insertionSortByRoomNumber(available);
         return available;
+    }
+
+    private boolean hasActiveBookingToday(String roomNumber) {
+        LocalDate today = LocalDate.now();
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+                if (parts.length >= 8
+                        && parts[7].equalsIgnoreCase(roomNumber)
+                        && isActiveRoomBookingStatus(parts[6])
+                        && isDateWithinStay(today, parts[4], parts[5])) {
+                    return true;
+                }
+            }
+        } catch (IOException e) {
+            // If bookings.txt is missing, only room status is used.
+        }
+        return false;
+    }
+
+    private boolean isActiveRoomBookingStatus(String status) {
+        return status.equalsIgnoreCase("Assigned")
+                || status.equalsIgnoreCase("Checked In");
+    }
+
+    private boolean isDateWithinStay(LocalDate date, String checkInDate, String checkOutDate) {
+        try {
+            LocalDate checkIn = LocalDate.parse(checkInDate);
+            LocalDate checkOut = LocalDate.parse(checkOutDate);
+            return !date.isBefore(checkIn) && date.isBefore(checkOut);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private ListInterface<Room> loadRoomsFromFile() {

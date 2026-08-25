@@ -186,6 +186,12 @@ public class BookingController {
         if (booking.getStatus().equals(STATUS_CANCELLED)) {
             return "Booking is already cancelled.";
         }
+        if (booking.getStatus().equals(STATUS_CHECKED_IN)) {
+            return "Checked-in bookings cannot be cancelled. Please check out the guest instead.";
+        }
+        if (booking.getStatus().equals(STATUS_CHECKED_OUT)) {
+            return "Checked-out bookings are completed records and cannot be cancelled.";
+        }
 
         booking.setStatus(STATUS_CANCELLED);
         if (booking.getGuest().getRoomNo() != null
@@ -230,6 +236,36 @@ public class BookingController {
             }
         }
         return results;
+    }
+
+    public ListInterface<BookingRequest> getCancellableBookings() {
+        ListInterface<BookingRequest> results = new ArrayList<>();
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (booking.getStatus().equals(STATUS_PENDING)
+                    || booking.getStatus().equals(STATUS_ASSIGNED)) {
+                results.add(booking);
+            }
+        }
+        return results;
+    }
+
+    public ListInterface<BookingRequest> getSortedCheckedInBookingsForCheckout() {
+        ListInterface<BookingRequest> results = getBookingsByStatus(STATUS_CHECKED_IN);
+        insertionSortBookingsByCheckoutDue(results);
+        return results;
+    }
+
+    public String getCheckoutDueLabel(BookingRequest booking) {
+        LocalDate today = LocalDate.now();
+        LocalDate checkOutDate = LocalDate.parse(booking.getCheckOutDate());
+        if (checkOutDate.isBefore(today)) {
+            return "Overdue";
+        }
+        if (checkOutDate.isEqual(today)) {
+            return "Due Today";
+        }
+        return "Not Due";
     }
 
     public ListInterface<BookingRequest> generateBookingReport(String bookingTypeFilter,
@@ -475,6 +511,42 @@ public class BookingController {
             return 5;
         }
         return 6;
+    }
+
+    private void insertionSortBookingsByCheckoutDue(ListInterface<BookingRequest> list) {
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
+            BookingRequest key = list.getEntry(i);
+            int j = i - 1;
+            while (j >= 1 && compareBookingsByCheckoutDue(list.getEntry(j), key) > 0) {
+                list.replace(j + 1, list.getEntry(j));
+                j--;
+            }
+            list.replace(j + 1, key);
+        }
+    }
+
+    private int compareBookingsByCheckoutDue(BookingRequest left, BookingRequest right) {
+        int dueCompare = getCheckoutDueOrder(left) - getCheckoutDueOrder(right);
+        if (dueCompare != 0) {
+            return dueCompare;
+        }
+
+        int dateCompare = left.getCheckOutDate().compareTo(right.getCheckOutDate());
+        if (dateCompare != 0) {
+            return dateCompare;
+        }
+        return left.getBookingId().compareToIgnoreCase(right.getBookingId());
+    }
+
+    private int getCheckoutDueOrder(BookingRequest booking) {
+        String label = getCheckoutDueLabel(booking);
+        if (label.equals("Overdue")) {
+            return 1;
+        }
+        if (label.equals("Due Today")) {
+            return 2;
+        }
+        return 3;
     }
 
     private void insertionSortDemandRowsByRequests(ListInterface<RoomTypeDemandRow> list) {

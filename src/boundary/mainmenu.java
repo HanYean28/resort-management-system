@@ -30,7 +30,7 @@ public class mainmenu {
                 choice = scanner.nextInt();
                 scanner.nextLine();
             } else {
-                System.out.println("Invalid choice. Please enter a number.");
+                UIUtils.printError("Invalid choice. Please enter a number.");
                 scanner.nextLine();
                 UIUtils.pressEnterToContinue(scanner);
                 continue;
@@ -53,7 +53,7 @@ public class mainmenu {
                     System.out.println("Exiting the system. Goodbye!");
                     break;
                 default:
-                    System.out.println("Invalid choice. Please try again.");
+                    UIUtils.printError("Invalid choice. Please try again.");
                     UIUtils.pressEnterToContinue(scanner);
             }
         }

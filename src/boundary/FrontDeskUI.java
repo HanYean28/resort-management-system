@@ -29,7 +29,7 @@ public class FrontDeskUI {
             System.out.println(" [3] Remove Guest Record");
             System.out.println(" [4] Generate Report 1: Guest Directory Report");
             System.out.println(" [5] Generate Report 2: Guest Billing Report");
-            System.out.println(" [6] View Available Rooms (Ready for Check-In)");
+            System.out.println(" [6] View Rooms Available Today");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
             System.out.print("Please enter choice (0-6): ");
@@ -38,7 +38,7 @@ public class FrontDeskUI {
                 choice = scanner.nextInt();
                 scanner.nextLine();
             } else {
-                System.out.println("Invalid input! Please enter a number.");
+                UIUtils.printError("Invalid input! Please enter a number.");
                 scanner.nextLine();
                 UIUtils.pressEnterToContinue(scanner);
                 continue;
@@ -68,7 +68,7 @@ public class FrontDeskUI {
                     System.out.println("Returning to Main Menu...");
                     break;
                 default:
-                    System.out.println("Invalid choice. Try again.");
+                    UIUtils.printError("Invalid choice. Try again.");
             }
 
             if (choice != 0) {
@@ -95,7 +95,7 @@ public class FrontDeskUI {
 
         Guest result = service.searchByConfirmationNumber(confirmationNo);
         if (result == null) {
-            System.out.println("\nNo guest record found for confirmation number " + confirmationNo + ".");
+            UIUtils.printError("No guest record found for confirmation number " + confirmationNo + ".");
         } else {
             System.out.println("\n[GUEST FOUND]");
             printGuestDetail(result);
@@ -112,7 +112,7 @@ public class FrontDeskUI {
 
         Guest removed = service.removeGuest(confirmationNo);
         if (removed == null) {
-            System.out.println("\nNo guest record found for confirmation number " + confirmationNo + ".");
+            UIUtils.printError("No guest record found for confirmation number " + confirmationNo + ".");
         } else {
             System.out.println("\nRemoved record for: " + removed.getName());
         }
@@ -153,11 +153,11 @@ public class FrontDeskUI {
 
     private void displayAvailableRooms() {
         UIUtils.clearScreen();
-        UIUtils.printHeader("AVAILABLE ROOMS (READY FOR CHECK-IN)");
+        UIUtils.printHeader("ROOMS AVAILABLE TODAY");
 
         ListInterface<Room> rooms = service.getAvailableRooms();
         if (rooms.isEmpty()) {
-            System.out.println("No rooms are currently ready for check-in.");
+            System.out.println("No rooms are available today.");
             return;
         }
 
