@@ -440,7 +440,7 @@ public class VIPRoomAllocationUI {
 
         System.out.println(
                 "Room No         : "
-                + guest.getRoomNo()
+                + controller.getGuestCurrentRoom(guest.getConfirmationNo())
         );
 
         // Show booking date from bookings.txt for transparency.

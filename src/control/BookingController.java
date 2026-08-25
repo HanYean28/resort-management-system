@@ -54,7 +54,7 @@ public class BookingController {
         }
 
         String confirmationNo = generateConfirmationNo();
-        frontDeskService.addGuest(new Guest(confirmationNo, name, phone, "NONE", 0.0, "N/A"));
+        frontDeskService.addGuest(new Guest(confirmationNo, name, phone, "NONE", 0.0));
         return frontDeskService.searchByConfirmationNumber(confirmationNo);
     }
 
@@ -108,7 +108,6 @@ public class BookingController {
 
         booking.setAssignedRoomNumber(roomNumber);
         booking.setStatus(STATUS_CHECKED_IN);
-        frontDeskService.updateGuestRoom(guest.getConfirmationNo(), roomNumber);
         bookings.add(booking);
         updateRoomOccupancy(roomNumber, "Occupied");
         generatePaidBill(booking);
@@ -155,11 +154,30 @@ public class BookingController {
         }
 
         booking.setStatus(STATUS_CHECKED_IN);
-        frontDeskService.updateGuestRoom(booking.getGuest().getConfirmationNo(), booking.getAssignedRoomNumber());
         updateRoomOccupancy(booking.getAssignedRoomNumber(), "Occupied");
         generatePaidBill(booking);
         saveBookingsToFile();
         return null;
+    }
+
+    public String assignRoomToBookingForGuest(String confirmationNo, String roomNumber) {
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (booking.getGuest().getConfirmationNo().equalsIgnoreCase(confirmationNo)
+                    && (booking.getStatus().equals(STATUS_PENDING)
+                            || booking.getStatus().equals(STATUS_ASSIGNED))) {
+                if (hasDateClash(roomNumber, booking)) {
+                    return "Selected room is already assigned for this booking date.";
+                }
+
+                booking.setAssignedRoomNumber(roomNumber);
+                booking.setStatus(STATUS_ASSIGNED);
+                rebuildPendingQueue();
+                saveBookingsToFile();
+                return null;
+            }
+        }
+        return "No pending booking found for this guest.";
     }
 
     public String checkOutBooking(String bookingId) {
@@ -172,7 +190,6 @@ public class BookingController {
         }
 
         booking.setStatus(STATUS_CHECKED_OUT);
-        frontDeskService.updateGuestRoom(booking.getGuest().getConfirmationNo(), "N/A");
         markRoomDirtyAfterCheckout(booking.getAssignedRoomNumber());
         saveBookingsToFile();
         return null;
@@ -194,11 +211,6 @@ public class BookingController {
         }
 
         booking.setStatus(STATUS_CANCELLED);
-        if (booking.getGuest().getRoomNo() != null
-                && booking.getGuest().getRoomNo().equalsIgnoreCase(booking.getAssignedRoomNumber())) {
-            updateRoomOccupancy(booking.getAssignedRoomNumber(), "Vacant");
-            frontDeskService.updateGuestRoom(booking.getGuest().getConfirmationNo(), "N/A");
-        }
         rebuildPendingQueue();
         saveBookingsToFile();
         return null;

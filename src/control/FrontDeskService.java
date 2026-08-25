@@ -39,7 +39,7 @@ public class FrontDeskService {
 
     /**
      * Loads guest records from guests.txt.
-     * Format: confirmationNo|name|phone|loyaltyTier|billingAmount|roomNo
+     * Format: confirmationNo|name|phone|loyaltyTier|billingAmount
      */
     public void loadGuestsFromFile() {
         try (BufferedReader br = new BufferedReader(new FileReader(DATA_FILE))) {
@@ -47,9 +47,9 @@ public class FrontDeskService {
             while ((line = br.readLine()) != null) {
                 if (line.trim().isEmpty() || line.trim().startsWith("#")) continue;
                 String[] parts = line.split("\\|");
-                if (parts.length >= 6) {
+                if (parts.length >= 5) {
                     Guest guest = new Guest(parts[0], parts[1], parts[2], parts[3],
-                            Double.parseDouble(parts[4]), parts[5]);
+                            Double.parseDouble(parts[4]));
                     guestTree.add(guest);
                 }
             }
@@ -62,23 +62,23 @@ public class FrontDeskService {
     /** Hardcoded sample data so this module can be demonstrated/tested standalone.
      *  Room numbers here match the real Housekeeping rooms.txt (101-108). */
     private void loadSampleData() {
-        guestTree.add(new Guest("20260701", "Tan Wei Ling", "012-3456789", "NONE", 0.00, "101"));
-        guestTree.add(new Guest("20260702", "Nurul Aisyah", "013-2345678", "Diamond", 150.50, "104"));
-        guestTree.add(new Guest("20260703", "Rajesh Kumar", "016-7891234", "Platinum", 0.00, "105"));
-        guestTree.add(new Guest("20260704", "Chong Mei Yee", "011-9988776", "NONE", 45.00, "102"));
-        guestTree.add(new Guest("20260705", "Ahmad Faiz", "019-2233445", "Elite", 320.00, "107"));
+        guestTree.add(new Guest("20260701", "Tan Wei Ling", "012-3456789", "NONE", 0.00));
+        guestTree.add(new Guest("20260702", "Nurul Aisyah", "013-2345678", "Diamond", 150.50));
+        guestTree.add(new Guest("20260703", "Rajesh Kumar", "016-7891234", "Platinum", 0.00));
+        guestTree.add(new Guest("20260704", "Chong Mei Yee", "011-9988776", "NONE", 45.00));
+        guestTree.add(new Guest("20260705", "Ahmad Faiz", "019-2233445", "Elite", 320.00));
     }
 
     /** Saves all current guest records back to guests.txt (in confirmationNo order). */
     public void saveGuestsToFile() {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(DATA_FILE))) {
-            bw.write("# confirmationNo|name|phone|loyaltyTier|billingAmount|roomNo");
+            bw.write("# confirmationNo|name|phone|loyaltyTier|billingAmount");
             bw.newLine();
             Iterator<Guest> it = guestTree.getInorderIterator();
             while (it.hasNext()) {
                 Guest g = it.next();
                 bw.write(g.getConfirmationNo() + "|" + g.getName() + "|" + g.getPhone() + "|"
-                        + g.getLoyaltyTier() + "|" + g.getBillingAmount() + "|" + g.getRoomNo());
+                        + g.getLoyaltyTier() + "|" + g.getBillingAmount());
                 bw.newLine();
             }
         } catch (IOException e) {
@@ -117,21 +117,9 @@ public class FrontDeskService {
         return removed;
     }
 
-    public boolean updateGuestRoom(String confirmationNo, String roomNo) {
-        Guest guest = searchByConfirmationNumber(confirmationNo);
-        if (guest == null) {
-            return false;
-        }
-
-        guest.setRoomNo(roomNo);
-        guestTree.add(guest);
-        saveGuestsToFile();
-        return true;
-    }
-
     /** Builds a placeholder Guest used only as a search key (equals/compareTo use confirmationNo only). */
     private Guest searchKey(String confirmationNo) {
-        return new Guest(confirmationNo, null, null, null, 0.0, null);
+        return new Guest(confirmationNo, null, null, null, 0.0);
     }
 
     public boolean isEmpty() {
@@ -246,6 +234,10 @@ public class FrontDeskService {
 
     /** Looks up a room's type by room number (linear search through rooms.txt). Returns "N/A" if not found. */
     public String getRoomType(String roomNo) {
+        if (roomNo == null || roomNo.equalsIgnoreCase("N/A")) {
+            return "N/A";
+        }
+
         ListInterface<Room> allRooms = loadRoomsFromFile();
         for (int i = 1; i <= allRooms.getNumberOfEntries(); i++) {
             Room r = allRooms.getEntry(i);
@@ -254,6 +246,31 @@ public class FrontDeskService {
             }
         }
         return "N/A";
+    }
+
+    public String getGuestCurrentRoom(String confirmationNo) {
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+                if (parts.length >= 8
+                        && parts[1].equalsIgnoreCase(confirmationNo)
+                        && isActiveRoomBookingStatus(parts[6])) {
+                    return parts[7];
+                }
+            }
+        } catch (IOException e) {
+            // If bookings.txt is missing, the guest has no active room.
+        }
+        return "N/A";
+    }
+
+    public String getGuestCurrentRoomType(String confirmationNo) {
+        return getRoomType(getGuestCurrentRoom(confirmationNo));
     }
 
     // Filters by TWO criteria: (1) loyalty membership (member vs non-member)
@@ -271,7 +288,7 @@ public class FrontDeskService {
             boolean isMember = g.getLoyaltyTier() != null && !g.getLoyaltyTier().equalsIgnoreCase("NONE");
             boolean matchesMembership = (isMember == membersOnly);
             boolean matchesRoomType = !filterByRoomType
-                    || getRoomType(g.getRoomNo()).equalsIgnoreCase(roomTypeFilter);
+                    || getGuestCurrentRoomType(g.getConfirmationNo()).equalsIgnoreCase(roomTypeFilter);
 
             if (matchesMembership && matchesRoomType) {
                 filtered.add(g);

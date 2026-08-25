@@ -553,13 +553,13 @@ public class BookingUI {
             return;
         }
 
-        System.out.printf("%-14s | %-18s | %-14s | %-8s%n",
-                "Confirmation", "Name", "Phone", "Room No");
+        System.out.printf("%-14s | %-18s | %-14s%n",
+                "Confirmation", "Name", "Phone");
         UIUtils.printSectionLine();
         for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
             Guest guest = guests.getEntry(i);
-            System.out.printf("%-14s | %-18s | %-14s | %-8s%n",
-                    guest.getConfirmationNo(), guest.getName(), guest.getPhone(), guest.getRoomNo());
+            System.out.printf("%-14s | %-18s | %-14s%n",
+                    guest.getConfirmationNo(), guest.getName(), guest.getPhone());
         }
         UIUtils.printSectionLine();
     }
