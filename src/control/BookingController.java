@@ -680,17 +680,6 @@ public class BookingController {
         }
     }
 
-    private boolean isRoomVacant(String roomNumber) {
-        ListInterface<Room> rooms = loadRoomsFromFile();
-        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
-            Room room = rooms.getEntry(i);
-            if (room.getRoomNumber().equalsIgnoreCase(roomNumber)) {
-                return room.getOccupancyStatus().equalsIgnoreCase("Vacant");
-            }
-        }
-        return false;
-    }
-
     private String validateAssignedRoomForCheckIn(String roomNumber) {
         ListInterface<Room> rooms = loadRoomsFromFile();
         for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
