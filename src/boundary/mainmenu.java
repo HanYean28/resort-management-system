@@ -1,5 +1,7 @@
 package boundary;
 
+import utility.UIUtils;
+
 import java.util.Scanner;
 
 /**

@@ -4,14 +4,14 @@ import adt.ArrayList;
 import adt.BinarySearchTree;
 import adt.BinarySearchTreeInterface;
 import adt.ListInterface;
+import dao.BillingDAO;
+import dao.BookingDAO;
+import dao.GuestDAO;
+import dao.RoomDAO;
 import entity.BillingRecord;
+import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Iterator;
 
@@ -25,15 +25,18 @@ import java.util.Iterator;
  */
 
 public class FrontDeskService {
-    private static final String DATA_FILE = "guests.txt";
-    private static final String ROOMS_FILE = "rooms.txt";
-    private static final String BOOKINGS_FILE = "bookings.txt";
-    private static final String BILLING_FILE = "billing.txt";
-
     private BinarySearchTreeInterface<Guest> guestTree;
+    private GuestDAO guestDAO;
+    private RoomDAO roomDAO;
+    private BookingDAO bookingDAO;
+    private BillingDAO billingDAO;
 
     public FrontDeskService() {
         guestTree = new BinarySearchTree<>();
+        guestDAO = new GuestDAO();
+        roomDAO = new RoomDAO();
+        bookingDAO = new BookingDAO();
+        billingDAO = new BillingDAO();
         loadGuestsFromFile();
     }
 
@@ -42,18 +45,11 @@ public class FrontDeskService {
      * Format: confirmationNo|name|phone|loyaltyTier
      */
     public void loadGuestsFromFile() {
-        try (BufferedReader br = new BufferedReader(new FileReader(DATA_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) continue;
-                String[] parts = line.split("\\|");
-                if (parts.length >= 4) {
-                    Guest guest = new Guest(parts[0], parts[1], parts[2], parts[3]);
-                    guestTree.add(guest);
-                }
-            }
-        } catch (IOException e) {
-            // If file doesn't exist yet, fall back to hardcoded sample data
+        ListInterface<Guest> guests = guestDAO.loadGuests();
+        for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
+            guestTree.add(guests.getEntry(i));
+        }
+        if (guests.isEmpty()) {
             loadSampleData();
         }
     }
@@ -70,19 +66,7 @@ public class FrontDeskService {
 
     /** Saves all current guest records back to guests.txt (in confirmationNo order). */
     public void saveGuestsToFile() {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(DATA_FILE))) {
-            bw.write("# confirmationNo|name|phone|loyaltyTier");
-            bw.newLine();
-            Iterator<Guest> it = guestTree.getInorderIterator();
-            while (it.hasNext()) {
-                Guest g = it.next();
-                bw.write(g.getConfirmationNo() + "|" + g.getName() + "|" + g.getPhone() + "|"
-                        + g.getLoyaltyTier());
-                bw.newLine();
-            }
-        } catch (IOException e) {
-            // Handle logging or exception propagation
-        }
+        guestDAO.saveGuests(getAllGuestsSorted());
     }
 
     // ---------- Core BST operations (Non-Linear ADT & Searching) ----------
@@ -158,23 +142,14 @@ public class FrontDeskService {
 
     private boolean hasActiveBookingToday(String roomNumber) {
         LocalDate today = LocalDate.now();
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-                if (parts.length >= 8
-                        && parts[7].equalsIgnoreCase(roomNumber)
-                        && isActiveRoomBookingStatus(parts[6])
-                        && isDateWithinStay(today, parts[4], parts[5])) {
-                    return true;
-                }
+        ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (booking.getAssignedRoomNumber().equalsIgnoreCase(roomNumber)
+                    && isActiveRoomBookingStatus(booking.getStatus())
+                    && isDateWithinStay(today, booking.getCheckInDate(), booking.getCheckOutDate())) {
+                return true;
             }
-        } catch (IOException e) {
-            // If bookings.txt is missing, only room status is used.
         }
         return false;
     }
@@ -199,28 +174,7 @@ public class FrontDeskService {
     }
 
     private ListInterface<Room> loadRoomsFromFile() {
-        ListInterface<Room> rooms = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(ROOMS_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-                String[] parts = line.split("\\|");
-                if (parts.length >= 7) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]));
-                } else if (parts.length >= 6) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]));
-                } else if (parts.length == 4) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3]));
-                } else if (parts.length == 3) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], "N/A"));
-                }
-            }
-        } catch (IOException e) {
-            // If file doesn't exist, return empty list
-        }
-        return rooms;
+        return roomDAO.loadRooms();
     }
 
     private void insertionSortByRoomNumber(ListInterface<Room> list) {
@@ -252,22 +206,13 @@ public class FrontDeskService {
     }
 
     public String getGuestCurrentRoom(String confirmationNo) {
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-                if (parts.length >= 8
-                        && parts[1].equalsIgnoreCase(confirmationNo)
-                        && isCurrentStayStatus(parts[6])) {
-                    return parts[7];
-                }
+        ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (booking.getConfirmationNo().equalsIgnoreCase(confirmationNo)
+                    && isCurrentStayStatus(booking.getStatus())) {
+                return booking.getAssignedRoomNumber();
             }
-        } catch (IOException e) {
-            // If bookings.txt is missing, the guest has no active room.
         }
         return "N/A";
     }
@@ -343,25 +288,7 @@ public class FrontDeskService {
     }
 
     private ListInterface<BillingRecord> loadBillingFromFile() {
-        ListInterface<BillingRecord> bills = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(BILLING_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-                if (parts.length >= 11) {
-                    bills.add(new BillingRecord(parts[0], parts[1], parts[2], parts[3], parts[4],
-                            parts[5], parts[6], Integer.parseInt(parts[7]), Double.parseDouble(parts[8]),
-                            parts[9], parts[10]));
-                }
-            }
-        } catch (IOException e) {
-            // If file doesn't exist, return empty billing list.
-        }
-        return bills;
+        return billingDAO.loadBillingRecords();
     }
 
     private void quickSortBillsByAmountDescending(ListInterface<BillingRecord> list, int low, int high) {
