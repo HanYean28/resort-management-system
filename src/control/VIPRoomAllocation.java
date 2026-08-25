@@ -3,15 +3,12 @@ package control;
 import adt.ArrayList;
 import adt.ArrayPriorityQueue;
 import adt.ListInterface;
+import dao.GuestDAO;
+import dao.RoomDAO;
 import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -21,7 +18,7 @@ import java.time.format.DateTimeParseException;
  *
  * Responsibilities:
  * - Load guest data from guests.txt
- * - Load room data from Room.txt
+ * - Load room data from rooms.txt
  * - Delegate all booking data operations to BookingController
  * - Add VIP guests to the VIP priority queue
  * - Search and remove VIP guests
@@ -38,6 +35,8 @@ public class VIPRoomAllocation {
     private ArrayList<Guest>     guests;
     private ArrayList<Room>      rooms;
     private BookingController    bookingController;
+    private GuestDAO             guestDAO;
+    private RoomDAO              roomDAO;
 
     private static final DateTimeFormatter FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -56,6 +55,8 @@ public class VIPRoomAllocation {
         guests            = new ArrayList<>();
         rooms             = new ArrayList<>();
         bookingController = new BookingController();
+        guestDAO          = new GuestDAO();
+        roomDAO           = new RoomDAO();
 
         loadGuestData();
         loadRoomData();
@@ -73,101 +74,21 @@ public class VIPRoomAllocation {
      * the VIP priority queue.
      */
     private void loadGuestData() {
-
-        try (BufferedReader reader =
-                new BufferedReader(new FileReader("guests.txt"))) {
-
-            String line;
-
-            while ((line = reader.readLine()) != null) {
-
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")
-                        || line.startsWith("confirmationNo")) {
-                    continue;
-                }
-
-                String[] data = line.split("\\|");
-
-                if (data.length < 4) {
-                    continue;
-                }
-
-                String confirmationNo = data[0].trim();
-                String name           = data[1].trim();
-                String phone          = data[2].trim();
-                String loyaltyTier    = data[3].trim();
-
-                Guest guest = new Guest(
-                        confirmationNo,
-                        name,
-                        phone,
-                        loyaltyTier
-                );
-
-                addGuest(guest);
-            }
-
-            System.out.println("Guest data loaded successfully.");
-
-        } catch (IOException e) {
-            System.out.println("Error loading guests.txt: " + e.getMessage());
+        ListInterface<Guest> loadedGuests = guestDAO.loadGuests();
+        for (int i = 1; i <= loadedGuests.getNumberOfEntries(); i++) {
+            addGuest(loadedGuests.getEntry(i));
         }
     }
 
     /**
      * Purpose:
-     * Loads room information from Room.txt.
-     * Room.txt has 7 fields including occupancyStatus.
+     * Loads room information from rooms.txt.
+     * rooms.txt has 7 fields including occupancyStatus.
      */
     private void loadRoomData() {
-
-        try (BufferedReader reader =
-                new BufferedReader(new FileReader("Room.txt"))) {
-
-            String line;
-
-            while ((line = reader.readLine()) != null) {
-
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")
-                        || line.startsWith("roomNumber")) {
-                    continue;
-                }
-
-                String[] data = line.split("\\|");
-
-                if (data.length != 7) {
-                    continue;
-                }
-
-                String roomNumber            = data[0].trim();
-                String roomType              = data[1].trim();
-                String cleanlinessStatus     = data[2].trim();
-                String occupancyStatus       = data[3].trim();
-                String lastUpdate            = data[4].trim();
-                String dirtySince            = data[5].trim();
-                String lastTurnaroundMinutes = data[6].trim();
-
-                Room room = new Room(
-                        roomNumber,
-                        roomType,
-                        cleanlinessStatus,
-                        occupancyStatus,
-                        lastUpdate,
-                        dirtySince,
-                        lastTurnaroundMinutes
-                );
-
-                addRoom(room);
-            }
-
-            System.out.println("Room data loaded successfully.");
-
-        } catch (IOException e) {
-            System.out.println("Error loading Room.txt: " + e.getMessage());
+        ListInterface<Room> loadedRooms = roomDAO.loadRooms();
+        for (int i = 1; i <= loadedRooms.getNumberOfEntries(); i++) {
+            addRoom(loadedRooms.getEntry(i));
         }
     }
 
@@ -399,6 +320,7 @@ public class VIPRoomAllocation {
             guests.add(guest);
             vipQueue.add(guest);
         }
+        saveGuestData();
 
         // Register the booking via BookingController.
         // This saves to bookings.txt automatically.
@@ -437,8 +359,7 @@ public class VIPRoomAllocation {
             BookingRequest booking = all.getEntry(i);
 
             if (booking != null
-                    && confirmationNo.equals(
-                            booking.getGuest().getConfirmationNo())) {
+                    && confirmationNo.equals(booking.getConfirmationNo())) {
                 return booking.getCreatedAt();
             }
         }
@@ -461,8 +382,7 @@ public class VIPRoomAllocation {
             BookingRequest booking = all.getEntry(i);
 
             if (booking != null
-                    && confirmationNo.equals(
-                            booking.getGuest().getConfirmationNo())
+                    && confirmationNo.equals(booking.getConfirmationNo())
                     && (BookingController.STATUS_ASSIGNED.equals(booking.getStatus())
                             || BookingController.STATUS_CHECKED_IN.equals(booking.getStatus()))) {
                 return booking.getAssignedRoomNumber();
@@ -484,35 +404,7 @@ public class VIPRoomAllocation {
      * handled by BookingController (e.g. room assignment).
      */
     private void saveGuestData() {
-
-        try (BufferedWriter writer =
-                new BufferedWriter(new FileWriter("guests.txt"))) {
-
-            writer.write(
-                    "# confirmationNo|name|phone|loyaltyTier");
-            writer.newLine();
-
-            for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
-
-                Guest g = guests.getEntry(i);
-
-                if (g == null) {
-                    continue;
-                }
-
-                writer.write(
-                        g.getConfirmationNo() + "|" +
-                        g.getName()           + "|" +
-                        g.getPhone()          + "|" +
-                        g.getLoyaltyTier()
-                );
-
-                writer.newLine();
-            }
-
-        } catch (IOException e) {
-            System.out.println("Error saving guests.txt: " + e.getMessage());
-        }
+        guestDAO.saveGuests(guests);
     }
 
     // -------------------------------------------------------

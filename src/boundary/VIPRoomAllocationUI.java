@@ -3,10 +3,11 @@ package boundary;
 import control.VIPRoomAllocation;
 import entity.Guest;
 import entity.Room;
+import utility.UIUtils;
 import java.util.Scanner;
 
-import static boundary.UIUtils.clearScreen;
-import static boundary.UIUtils.pressEnterToContinue;
+import static utility.UIUtils.clearScreen;
+import static utility.UIUtils.pressEnterToContinue;
 
 public class VIPRoomAllocationUI {
 

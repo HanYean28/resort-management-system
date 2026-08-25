@@ -5,6 +5,7 @@ package entity;
  */
 public class BookingRequest {
     private String bookingId;
+    private String confirmationNo;
     private Guest guest;
     private String bookingType;
     private String requestedRoomType;
@@ -14,10 +15,11 @@ public class BookingRequest {
     private String assignedRoomNumber;
     private String createdAt;
 
-    public BookingRequest(String bookingId, Guest guest, String bookingType, String requestedRoomType,
+    public BookingRequest(String bookingId, String confirmationNo, String bookingType, String requestedRoomType,
             String checkInDate, String checkOutDate, String status, String assignedRoomNumber, String createdAt) {
         this.bookingId = bookingId;
-        this.guest = guest;
+        this.confirmationNo = confirmationNo;
+        this.guest = null;
         this.bookingType = bookingType;
         this.requestedRoomType = requestedRoomType;
         this.checkInDate = checkInDate;
@@ -33,6 +35,17 @@ public class BookingRequest {
 
     public Guest getGuest() {
         return guest;
+    }
+
+    public void setGuest(Guest guest) {
+        this.guest = guest;
+        if (guest != null) {
+            this.confirmationNo = guest.getConfirmationNo();
+        }
+    }
+
+    public String getConfirmationNo() {
+        return confirmationNo;
     }
 
     public String getBookingType() {

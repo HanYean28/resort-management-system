@@ -1,4 +1,4 @@
-package boundary;
+package utility;
 
 import java.util.Scanner;
 

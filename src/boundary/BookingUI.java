@@ -4,6 +4,7 @@ import adt.ListInterface;
 import control.BookingController;
 import entity.BookingRequest;
 import entity.Guest;
+import utility.UIUtils;
 
 import java.time.LocalDate;
 import java.util.Scanner;
