@@ -1,6 +1,5 @@
 package control;
 
-import adt.ArrayList;
 import adt.ArrayPriorityQueue;
 import adt.ListInterface;
 import dao.GuestDAO;
@@ -11,55 +10,66 @@ import entity.Room;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
- * Controller for VIP Room Allocation.
+ * Controller for Module 2 — VIP & Loyalty Tier Priority Room Allocation.
  *
- * Responsibilities:
- * - Load guest data from guests.txt
- * - Load room data from rooms.txt
- * - Delegate all booking data operations to BookingController
- * - Add VIP guests to the VIP priority queue
- * - Search and remove VIP guests
- * - Display available rooms
- * - Allocate rooms to the highest-priority VIP guest
+ * Reads from and writes to:
+ *   guests.txt   — confirmationNo|name|phone|loyaltyTier
+ *   rooms.txt    — roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
+ *   bookings.txt — bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt
  *
- * Priority ordering:
- *   1. Loyalty tier  (Diamond > Elite > Platinum > Gold > Silver)
- *   2. Booking createdAt (earlier booking wins within same tier)
+ * @author Lim How Voon
  */
 public class VIPRoomAllocation {
 
-    private ArrayPriorityQueue   vipQueue;
-    private ArrayList<Guest>     guests;
-    private ArrayList<Room>      rooms;
-    private BookingController    bookingController;
-    private GuestDAO             guestDAO;
-    private RoomDAO              roomDAO;
+    // -------------------------------------------------------
+    // File paths
+    // -------------------------------------------------------
 
-    private static final DateTimeFormatter FORMATTER =
+    private static final String GUESTS_FILE   = "guests.txt";
+    private static final String ROOMS_FILE    = "rooms.txt";
+    private static final String BOOKINGS_FILE = "bookings.txt";
+
+    private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+    // -------------------------------------------------------
+    // Fields
+    // -------------------------------------------------------
+
+    /** Priority queue — highest-tier guest always at the front. */
+    private ArrayPriorityQueue vipQueue;
+
+    /** All rooms loaded from rooms.txt (full list, not just available). */
+    private List<Room> allRooms;
+
+    /** Record of every (guest, room) pair that has been assigned. */
+    private List<String> allocationLog;
+
+    /** Maps confirmationNo → requested room type for each VIP guest. */
+    private Map<String, String> requestedRoomTypes;
+
+    // -------------------------------------------------------
+    // Constructor
+    // -------------------------------------------------------
+
     /**
-     * Purpose:
-     * Initializes the VIP room allocation module.
-     *
-     * BookingController is reused here so bookings.txt is
-     * managed by one controller only — no duplicate reads
-     * or writes.
+     * Initialises the controller and immediately loads
+     * guests and rooms from their respective txt files.
      */
     public VIPRoomAllocation() {
+        vipQueue           = new ArrayPriorityQueue();
+        allRooms           = new ArrayList<>();
+        allocationLog      = new ArrayList<>();
+        requestedRoomTypes = new HashMap<>();
 
-        vipQueue          = new ArrayPriorityQueue();
-        guests            = new ArrayList<>();
-        rooms             = new ArrayList<>();
-        bookingController = new BookingController();
-        guestDAO          = new GuestDAO();
-        roomDAO           = new RoomDAO();
-
-        loadGuestData();
-        loadRoomData();
+        loadGuestsFromFile();
+        loadRoomsFromFile();
     }
 
     // -------------------------------------------------------
@@ -67,344 +77,572 @@ public class VIPRoomAllocation {
     // -------------------------------------------------------
 
     /**
-     * Purpose:
-     * Loads guest information from guests.txt.
+     * Reads guests.txt and adds all VIP guests (tier != NONE)
+     * to the priority queue.
      *
-     * VIP guests (loyalty tier != NONE) are added to
-     * the VIP priority queue.
+     * File format (4 fields):
+     *   confirmationNo|name|phone|loyaltyTier
+     *
+     * Skips duplicate confirmation numbers already in the queue.
+     * Normalises loyalty tier to title case (e.g. "PLAtinum" → "Platinum").
      */
-    private void loadGuestData() {
-        ListInterface<Guest> loadedGuests = guestDAO.loadGuests();
-        for (int i = 1; i <= loadedGuests.getNumberOfEntries(); i++) {
-            addGuest(loadedGuests.getEntry(i));
+    private void loadGuestsFromFile() {
+
+        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
+
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+
+                if (parts.length < 4) {
+                    continue;
+                }
+
+                String confirmationNo = parts[0].trim();
+                String name           = parts[1].trim();
+                String phone          = parts[2].trim();
+                String loyaltyTier    = normaliseTier(parts[3].trim());
+
+                // Skip non-VIP guests.
+                if (loyaltyTier.equalsIgnoreCase("NONE")) {
+                    continue;
+                }
+
+                // Skip duplicates already in the queue.
+                if (vipQueue.find(confirmationNo) != null) {
+                    continue;
+                }
+
+                Guest guest = new Guest(confirmationNo, name, phone, loyaltyTier);
+                vipQueue.add(guest);
+            }
+
+            System.out.println("[VIP] Guests loaded from " + GUESTS_FILE);
+
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not read " + GUESTS_FILE + ": " + e.getMessage());
         }
     }
 
     /**
-     * Purpose:
-     * Loads room information from rooms.txt.
-     * rooms.txt has 7 fields including occupancyStatus.
+     * Reads rooms.txt and loads all rooms into allRooms.
+     *
+     * File format (7 fields):
+     *   roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
+     *
+     * Available rooms are those that are Vacant AND Ready.
      */
-    private void loadRoomData() {
-        ListInterface<Room> loadedRooms = roomDAO.loadRooms();
-        for (int i = 1; i <= loadedRooms.getNumberOfEntries(); i++) {
-            addRoom(loadedRooms.getEntry(i));
+    private void loadRoomsFromFile() {
+
+        allRooms.clear();
+
+        try (BufferedReader br = new BufferedReader(new FileReader(ROOMS_FILE))) {
+
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+
+                if (parts.length < 7) {
+                    continue;
+                }
+
+                String roomNumber            = parts[0].trim();
+                String roomType              = parts[1].trim();
+                String cleanlinessStatus     = parts[2].trim();
+                String occupancyStatus       = parts[3].trim();
+                String lastUpdate            = parts[4].trim();
+                String dirtySince            = parts[5].trim();
+                String lastTurnaroundMinutes = parts[6].trim();
+
+                Room room = new Room(
+                        roomNumber,
+                        roomType,
+                        cleanlinessStatus,
+                        occupancyStatus,
+                        lastUpdate,
+                        dirtySince,
+                        lastTurnaroundMinutes
+                );
+
+                allRooms.add(room);
+            }
+
+            System.out.println("[VIP] Rooms loaded from " + ROOMS_FILE);
+
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not read " + ROOMS_FILE + ": " + e.getMessage());
         }
     }
 
     // -------------------------------------------------------
-    // Guest management
+    // File savers
     // -------------------------------------------------------
 
     /**
-     * Purpose:
-     * Adds a guest to the general guest list.
-     * VIP guests (tier != NONE) also enter the priority queue.
+     * Rewrites guests.txt with all guests currently in the queue
+     * plus any non-VIP guests that were skipped on load.
+     *
+     * Format: confirmationNo|name|phone|loyaltyTier
+     */
+    public void saveGuestsToFile() {
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(GUESTS_FILE))) {
+
+            bw.write("# confirmationNo|name|phone|loyaltyTier");
+            bw.newLine();
+
+            Guest[] all = vipQueue.getAll();
+
+            for (Guest g : all) {
+                if (g == null) continue;
+                bw.write(g.getConfirmationNo() + "|"
+                        + g.getName()          + "|"
+                        + g.getPhone()         + "|"
+                        + g.getLoyaltyTier());
+                bw.newLine();
+            }
+
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not save " + GUESTS_FILE + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Rewrites rooms.txt with the current in-memory room list.
+     *
+     * Format: roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
+     */
+    public void saveRoomsToFile() {
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(ROOMS_FILE))) {
+
+            bw.write("# roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes");
+            bw.newLine();
+
+            for (Room r : allRooms) {
+                if (r == null) continue;
+                bw.write(r.getRoomNumber()            + "|"
+                        + r.getRoomType()             + "|"
+                        + r.getCleanlinessStatus()    + "|"
+                        + r.getOccupancyStatus()      + "|"
+                        + r.getLastUpdate()           + "|"
+                        + r.getDirtySince()           + "|"
+                        + r.getLastTurnaroundMinutes());
+                bw.newLine();
+            }
+
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not save " + ROOMS_FILE + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Appends a new booking record to bookings.txt when a room
+     * is allocated to a VIP guest.
+     *
+     * Format: bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt
+     */
+    private void saveBookingToFile(Guest guest, Room room) {
+
+        String bookingId  = generateNextBookingId();
+        String createdAt  = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
+
+            bw.write(bookingId                + "|"
+                    + guest.getConfirmationNo() + "|"
+                    + "VIP"                     + "|"
+                    + room.getRoomType()         + "|"
+                    + "N/A"                      + "|"   // checkInDate — not captured at allocation
+                    + "N/A"                      + "|"   // checkOutDate
+                    + "Assigned"                 + "|"
+                    + room.getRoomNumber()        + "|"
+                    + createdAt);
+            bw.newLine();
+
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not append to " + BOOKINGS_FILE + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Generates the next booking ID by reading the highest existing
+     * B-prefixed ID from bookings.txt and incrementing it.
+     */
+    private String generateNextBookingId() {
+
+        int max = 0;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+
+                if (parts.length > 0 && parts[0].startsWith("B")) {
+                    try {
+                        int num = Integer.parseInt(parts[0].substring(1));
+                        if (num > max) max = num;
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+
+        } catch (IOException ignored) {}
+
+        return String.format("B%04d", max + 1);
+    }
+
+    // -------------------------------------------------------
+    // Guest queue management
+    // -------------------------------------------------------
+
+    /**
+     * Adds a VIP guest to the priority queue and saves to guests.txt.
+     *
+     * @param guest the VIP guest to enqueue
+     * @throws IllegalArgumentException if guest is null
      */
     public void addGuest(Guest guest) {
 
         if (guest == null) {
-            return;
+            throw new IllegalArgumentException("Guest cannot be null.");
         }
 
-        guests.add(guest);
-
-        if (isVIP(guest)) {
-            vipQueue.add(guest);
-        }
+        vipQueue.add(guest);
+        saveGuestsToFile();
     }
 
     /**
-     * Purpose:
-     * Determines whether a guest qualifies as VIP.
+     * Adds a VIP guest with their requested room type.
+     * The requested room type is stored separately and used
+     * during allocation to auto-match a suitable room.
      */
-    private boolean isVIP(Guest guest) {
+    public void addGuest(Guest guest, String requestedRoomType) {
 
-        if (guest.getLoyaltyTier() == null) {
-            return false;
+        if (guest == null) {
+            throw new IllegalArgumentException("Guest cannot be null.");
         }
 
-        return !guest.getLoyaltyTier().equalsIgnoreCase("NONE");
+        vipQueue.add(guest);
+
+        if (requestedRoomType != null && !requestedRoomType.trim().isEmpty()) {
+            requestedRoomTypes.put(guest.getConfirmationNo(), requestedRoomType.trim());
+        }
+
+        saveGuestsToFile();
     }
 
     /**
-     * Purpose:
-     * Adds a room into the room collection.
+     * Returns the requested room type for a given confirmation number.
+     * Returns null if no preference was recorded.
      */
-    public void addRoom(Room room) {
+    public String getRequestedRoomType(String confirmationNo) {
+        return requestedRoomTypes.get(confirmationNo);
+    }
+
+    /**
+     * Allocates a specific room (by room number) to the given guest
+     * and removes that guest from the queue.
+     *
+     * Used for manual allocation when auto-match fails.
+     */
+    public AllocationResult allocateRoom(Guest guest, String roomNumber) {
+
+        if (guest == null || roomNumber == null) {
+            return AllocationResult.failure("Invalid guest or room number.");
+        }
+
+        // Find the room in allRooms by number.
+        Room target = null;
+        for (Room r : allRooms) {
+            if (r.getRoomNumber().equalsIgnoreCase(roomNumber)
+                    && isRoomAvailable(r)) {
+                target = r;
+                break;
+            }
+        }
+
+        if (target == null) {
+            return AllocationResult.failure(
+                    "Room " + roomNumber + " is not available.");
+        }
+
+        // Remove guest from queue.
+        vipQueue.removeByConfirmationNo(guest.getConfirmationNo());
+
+        // Update room status.
+        target.setOccupancyStatus("Occupied");
+        target.setLastUpdate(LocalDateTime.now().format(TIMESTAMP_FORMAT));
+
+        // Persist.
+        saveRoomsToFile();
+        saveGuestsToFile();
+        saveBookingToFile(guest, target);
+
+        String entry = buildLogEntry(guest, target);
+        allocationLog.add(entry);
+
+        return AllocationResult.success(guest, target, entry);
+    }
+
+    /**
+     * Returns the highest-priority guest without removing them.
+     */
+    public Guest peekNextGuest() {
+        return vipQueue.peek();
+    }
+
+    /**
+     * Removes a specific guest from the queue by confirmation number
+     * and saves the updated guest list to guests.txt.
+     */
+    public boolean removeGuestFromQueue(String confirmationNo) {
+
+        boolean removed = vipQueue.removeByConfirmationNo(confirmationNo);
+
+        if (removed) {
+            saveGuestsToFile();
+        }
+
+        return removed;
+    }
+
+    /**
+     * Finds a guest in the queue by confirmation number without removing them.
+     */
+    public Guest findGuestInQueue(String confirmationNo) {
+        return vipQueue.find(confirmationNo);
+    }
+
+    /**
+     * Returns all guests currently waiting, ordered highest-tier first.
+     */
+    public Guest[] getAllWaitingGuests() {
+        return vipQueue.getAll();
+    }
+
+    /** Returns the number of guests currently waiting in the VIP queue. */
+    public int getQueueSize() {
+        return vipQueue.size();
+    }
+
+    /** Returns true if no guests are waiting. */
+    public boolean isQueueEmpty() {
+        return vipQueue.isEmpty();
+    }
+
+    // -------------------------------------------------------
+    // Room pool management
+    // -------------------------------------------------------
+
+    /**
+     * Returns all rooms that are currently Vacant and Ready.
+     * Derived live from allRooms so it always reflects the latest state.
+     */
+    public List<Room> getAvailableRooms() {
+
+        List<Room> available = new ArrayList<>();
+
+        for (Room r : allRooms) {
+            if (isRoomAvailable(r)) {
+                available.add(r);
+            }
+        }
+
+        return available;
+    }
+
+    /** Returns the count of currently available rooms. */
+    public int getAvailableRoomCount() {
+        return getAvailableRooms().size();
+    }
+
+    /**
+     * Manually adds a room to the in-memory room list and saves to rooms.txt.
+     * Used by the sample data loader and the UI.
+     */
+    public void addAvailableRoom(Room room) {
 
         if (room == null) {
             return;
         }
 
-        rooms.add(room);
+        allRooms.add(room);
+        saveRoomsToFile();
     }
 
     // -------------------------------------------------------
-    // Queue queries
+    // Allocation
     // -------------------------------------------------------
 
     /**
-     * Purpose:
-     * Returns the highest-priority VIP guest without
-     * removing them from the queue.
+     * Assigns the best available room to the highest-priority VIP guest.
      *
-     * When two guests share the same tier, the one with
-     * the earlier booking createdAt (from BookingController)
-     * is returned.
+     * Auto-match logic:
+     *   1. Check if the guest has a requested room type.
+     *   2. If yes, find the first available room of that type.
+     *   3. If no match, return a failure so the UI can prompt manual selection.
+     *   4. If no preference, take the first available room.
      */
-    public Guest getNextVIPGuest() {
+    public AllocationResult allocateNextRoom() {
 
-        Guest[] sorted = getSortedWaitingList();
-
-        if (sorted.length == 0) {
-            return null;
+        if (vipQueue.isEmpty()) {
+            return AllocationResult.failure("No VIP guests are currently waiting.");
         }
 
-        return sorted[0];
+        List<Room> available = getAvailableRooms();
+
+        if (available.isEmpty()) {
+            return AllocationResult.failure("No rooms are currently available.");
+        }
+
+        Guest guest = vipQueue.peek();
+        String requestedType = requestedRoomTypes.get(guest.getConfirmationNo());
+
+        Room matched = null;
+
+        if (requestedType != null) {
+            // Try to find a room matching the requested type.
+            for (Room r : available) {
+                if (r.getRoomType().equalsIgnoreCase(requestedType)) {
+                    matched = r;
+                    break;
+                }
+            }
+
+            // No room of requested type available — signal manual selection needed.
+            if (matched == null) {
+                return AllocationResult.failure(
+                        "No available room of type '" + requestedType
+                        + "' for " + guest.getName() + ". Please select manually.");
+            }
+        } else {
+            // No preference — take first available.
+            matched = available.get(0);
+        }
+
+        // Remove guest from queue.
+        vipQueue.remove();
+
+        // Update room status.
+        matched.setOccupancyStatus("Occupied");
+        matched.setLastUpdate(LocalDateTime.now().format(TIMESTAMP_FORMAT));
+
+        // Persist.
+        saveRoomsToFile();
+        saveGuestsToFile();
+        saveBookingToFile(guest, matched);
+
+        String entry = buildLogEntry(guest, matched);
+        allocationLog.add(entry);
+
+        return AllocationResult.success(guest, matched, entry);
     }
 
     /**
-     * Purpose:
-     * Returns all VIP guests in the waiting queue,
-     * sorted by priority then by booking createdAt.
+     * Processes the entire queue, allocating rooms one by one until
+     * either the queue or the available room pool is exhausted.
      */
-    public Guest[] getWaitingList() {
+    public List<AllocationResult> allocateAll() {
 
-        return getSortedWaitingList();
-    }
+        List<AllocationResult> results = new ArrayList<>();
 
-    /**
-     * Purpose:
-     * Returns the number of VIP guests waiting.
-     */
-    public int getWaitingGuestCount() {
+        while (!vipQueue.isEmpty() && !getAvailableRooms().isEmpty()) {
+            results.add(allocateNextRoom());
+        }
 
-        return vipQueue.size();
-    }
-
-    /**
-     * Purpose:
-     * Checks whether there are no VIP guests waiting.
-     */
-    public boolean isWaitingListEmpty() {
-
-        return vipQueue.isEmpty();
-    }
-
-    // -------------------------------------------------------
-    // Room operations
-    // -------------------------------------------------------
-
-    /**
-     * Purpose:
-     * Returns all rooms whose cleanliness status is Ready.
-     */
-    public Room[] getAvailableRooms() {
-
-        int count = 0;
-
-        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
-
-            Room room = rooms.getEntry(i);
-
-            if (room != null
-                    && "Ready".equalsIgnoreCase(
-                            room.getCleanlinessStatus())) {
-                count++;
+        // Report remaining guests who could not be allocated.
+        if (!vipQueue.isEmpty()) {
+            Guest[] remaining = vipQueue.getAll();
+            for (Guest g : remaining) {
+                if (g != null) {
+                    results.add(AllocationResult.failure(
+                            "No room available for " + g.getName()
+                            + " [" + g.getLoyaltyTier() + "]"
+                    ));
+                }
             }
         }
 
-        Room[] availableRooms = new Room[count];
-        int index = 0;
+        return results;
+    }
 
-        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+    /** Returns the full allocation log. */
+    public List<String> getAllocationLog() {
+        return new ArrayList<>(allocationLog);
+    }
 
-            Room room = rooms.getEntry(i);
+    /**
+     * Purpose:
+     * Generates a unique 8-digit confirmation number by finding
+     * the highest existing numeric confirmation number in guests.txt
+     * and incrementing it by 1.
+     */
+    public String generateConfirmationNo() {
 
-            if (room != null
-                    && "Ready".equalsIgnoreCase(
-                            room.getCleanlinessStatus())) {
-                availableRooms[index++] = room;
+        int max = 0;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
+
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+
+                if (parts.length >= 1) {
+                    try {
+                        int num = Integer.parseInt(parts[0].trim());
+                        if (num > max) {
+                            max = num;
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
             }
-        }
 
-        return availableRooms;
+        } catch (IOException ignored) {}
+
+        return String.format("%08d", max + 1);
     }
 
     /**
-     * Purpose:
-     * Allocates a selected room to the highest-priority
-     * VIP guest (priority then createdAt tiebreaker).
-     *
-     * The guest is removed from the queue after allocation.
+     * Clears the queue, room list, and allocation log.
+     * Does NOT touch the txt files.
      */
-    public Guest allocateRoom(String roomNumber) {
-
-        Guest nextGuest = getNextVIPGuest();
-
-        if (nextGuest == null) {
-            return null;
-        }
-
-        Room selectedRoom = findAvailableRoom(roomNumber);
-
-        if (selectedRoom == null) {
-            return null;
-        }
-
-        // Remove this specific guest from the queue.
-        vipQueue.removeByConfirmationNo(nextGuest.getConfirmationNo());
-
-        String error = bookingController.assignRoomToBookingForGuest(
-                nextGuest.getConfirmationNo(),
-                selectedRoom.getRoomNumber()
-        );
-        if (error != null) {
-            vipQueue.add(nextGuest);
-            return null;
-        }
-
-        return nextGuest;
-    }
-
-    /**
-     * Purpose:
-     * Searches for a VIP guest by confirmation number.
-     */
-    public Guest findGuest(String confirmationNo) {
-
-        return vipQueue.find(confirmationNo);
-    }
-
-    /**
-     * Purpose:
-     * Removes a VIP guest from the queue by confirmation number.
-     */
-    public boolean removeGuest(String confirmationNo) {
-
-        return vipQueue.removeByConfirmationNo(confirmationNo);
-    }
-
-    // -------------------------------------------------------
-    // Booking delegation — all booking data goes through
-    // BookingController so there is one source of truth.
-    // -------------------------------------------------------
-
-    /**
-     * Purpose:
-     * Adds a new VIP guest and registers a standard booking
-     * via BookingController.
-     *
-     * BookingController.addGuest() saves to guests.txt.
-     * BookingController.addStandardBooking() saves to bookings.txt.
-     * The guest is also added to the local VIP queue.
-     */
-    public String addVIPGuest(String name, String phone,
-            String loyaltyTier, String requestedRoomType,
-            String checkInDate, String checkOutDate) {
-
-        // Register the guest through BookingController.
-        Guest guest = bookingController.addGuest(name, phone);
-
-        if (guest == null) {
-            return "Failed to create guest. Name and phone cannot be empty.";
-        }
-
-        // Update the loyalty tier — BookingController creates guests
-        // with NONE tier by default.
-        guest.setLoyaltyTier(loyaltyTier);
-
-        // Add to local VIP queue if tier qualifies.
-        if (isVIP(guest)) {
-            guests.add(guest);
-            vipQueue.add(guest);
-        }
-        saveGuestData();
-
-        // Register the booking via BookingController.
-        // This saves to bookings.txt automatically.
-        String error = bookingController.addStandardBooking(
-                guest.getConfirmationNo(),
-                requestedRoomType,
-                checkInDate,
-                checkOutDate
-        );
-
-        return error; // null means success
-    }
-
-    /**
-     * Purpose:
-     * Returns the createdAt timestamp for a guest's booking
-     * by delegating to BookingController.
-     *
-     * Used by the UI to display booking date and by the
-     * tiebreaker logic in getSortedWaitingList().
-     */
-    public String getBookingCreatedAt(String confirmationNo) {
-
-        if (confirmationNo == null) {
-            return null;
-        }
-
-        // Ask BookingController for all bookings matching
-        // this confirmation number.
-        ListInterface<BookingRequest> all =
-                bookingController.getBookingsByStatus(
-                        BookingController.FILTER_ALL);
-
-        for (int i = 1; i <= all.getNumberOfEntries(); i++) {
-
-            BookingRequest booking = all.getEntry(i);
-
-            if (booking != null
-                    && confirmationNo.equals(booking.getConfirmationNo())) {
-                return booking.getCreatedAt();
-            }
-        }
-
-        return null;
-    }
-
-    public String getGuestCurrentRoom(String confirmationNo) {
-
-        if (confirmationNo == null) {
-            return "N/A";
-        }
-
-        ListInterface<BookingRequest> all =
-                bookingController.getBookingsByStatus(
-                        BookingController.FILTER_ALL);
-
-        for (int i = 1; i <= all.getNumberOfEntries(); i++) {
-
-            BookingRequest booking = all.getEntry(i);
-
-            if (booking != null
-                    && confirmationNo.equals(booking.getConfirmationNo())
-                    && (BookingController.STATUS_ASSIGNED.equals(booking.getStatus())
-                            || BookingController.STATUS_CHECKED_IN.equals(booking.getStatus()))) {
-                return booking.getAssignedRoomNumber();
-            }
-        }
-
-        return "N/A";
-    }
-
-    // -------------------------------------------------------
-    // Persistence
-    // -------------------------------------------------------
-
-    /**
-     * Purpose:
-     * Saves the current in-memory guest list back to guests.txt.
-     *
-     * Called after VIP guest data changes that are not
-     * handled by BookingController (e.g. room assignment).
-     */
-    private void saveGuestData() {
-        guestDAO.saveGuests(guests);
+    public void reset() {
+        vipQueue.clear();
+        allRooms.clear();
+        allocationLog.clear();
     }
 
     // -------------------------------------------------------
@@ -412,125 +650,83 @@ public class VIPRoomAllocation {
     // -------------------------------------------------------
 
     /**
-     * Purpose:
-     * Returns all VIP guests from the queue sorted by:
-     *   1. Loyalty tier (highest first)
-     *   2. Booking createdAt from BookingController (earliest first)
+     * A room is available if it is Vacant AND has cleanliness "Ready".
+     * Matches the actual value used in rooms.txt.
      */
-    private Guest[] getSortedWaitingList() {
+    private boolean isRoomAvailable(Room room) {
 
-        Guest[] all = vipQueue.getAll();
-
-        // Insertion sort — queue sizes are small.
-        for (int i = 1; i < all.length; i++) {
-
-            Guest key = all[i];
-            int j = i - 1;
-
-            while (j >= 0 && compare(all[j], key) > 0) {
-                all[j + 1] = all[j];
-                j--;
-            }
-
-            all[j + 1] = key;
-        }
-
-        // Ascending result — reverse so highest priority is first.
-        reverse(all);
-
-        return all;
+        return room != null
+                && "Vacant".equalsIgnoreCase(room.getOccupancyStatus())
+                && "Ready".equalsIgnoreCase(room.getCleanlinessStatus());
     }
 
     /**
-     * Purpose:
-     * Compares two guests for sorting.
-     *
-     * Rule 1: Higher tier = higher priority.
-     * Rule 2: Same tier — earlier createdAt wins (from BookingController).
+     * Normalises a loyalty tier string to title case.
+     * Handles mixed-case inputs like "PLAtinum" or "DIAMOND".
      */
-    private int compare(Guest a, Guest b) {
+    private String normaliseTier(String tier) {
 
-        int tierA = getPriority(a.getLoyaltyTier());
-        int tierB = getPriority(b.getLoyaltyTier());
-
-        if (tierA != tierB) {
-            return tierB - tierA;
+        if (tier == null || tier.isEmpty()) {
+            return "None";
         }
 
-        String dateA = getBookingCreatedAt(a.getConfirmationNo());
-        String dateB = getBookingCreatedAt(b.getConfirmationNo());
+        String upper = tier.toUpperCase();
 
-        if (dateA == null && dateB == null) return 0;
-        if (dateA == null) return 1;
-        if (dateB == null) return -1;
-
-        try {
-            LocalDateTime timeA = LocalDateTime.parse(dateA, FORMATTER);
-            LocalDateTime timeB = LocalDateTime.parse(dateB, FORMATTER);
-            return timeA.compareTo(timeB);
-        } catch (DateTimeParseException e) {
-            return 0;
+        switch (upper) {
+            case "DIAMOND":  return "Diamond";
+            case "ELITE":    return "Elite";
+            case "PLATINUM": return "Platinum";
+            case "GOLD":     return "Gold";
+            case "SILVER":   return "Silver";
+            default:         return "None";
         }
     }
 
-    /**
-     * Purpose:
-     * Converts a loyalty tier string into a numeric priority.
-     */
-    private int getPriority(String loyaltyTier) {
+    /** Builds a human-readable log entry for one allocation. */
+    private String buildLogEntry(Guest guest, Room room) {
 
-        if (loyaltyTier == null) return 0;
-
-        switch (loyaltyTier.toUpperCase()) {
-            case "DIAMOND":  return 5;
-            case "ELITE":    return 4;
-            case "PLATINUM": return 3;
-            case "GOLD":     return 2;
-            case "SILVER":   return 1;
-            default:         return 0;
-        }
+        return String.format(
+                "[ALLOCATED] %s (Tier: %s, Conf#: %s) → Room %s (%s)",
+                guest.getName(),
+                guest.getLoyaltyTier(),
+                guest.getConfirmationNo(),
+                room.getRoomNumber(),
+                room.getRoomType()
+        );
     }
 
-    /**
-     * Purpose:
-     * Reverses a Guest array in-place.
-     */
-    private void reverse(Guest[] arr) {
-
-        int left  = 0;
-        int right = arr.length - 1;
-
-        while (left < right) {
-            Guest temp  = arr[left];
-            arr[left]   = arr[right];
-            arr[right]  = temp;
-            left++;
-            right--;
-        }
-    }
+    // -------------------------------------------------------
+    // Inner class — AllocationResult
+    // -------------------------------------------------------
 
     /**
-     * Purpose:
-     * Finds a specific room by number if it is Ready.
+     * Immutable result object returned by allocateNextRoom() and allocateAll().
      */
-    private Room findAvailableRoom(String roomNumber) {
+    public static class AllocationResult {
 
-        if (roomNumber == null || roomNumber.trim().isEmpty()) {
-            return null;
+        private final boolean success;
+        private final Guest   guest;
+        private final Room    room;
+        private final String  message;
+
+        private AllocationResult(boolean success, Guest guest, Room room, String message) {
+            this.success = success;
+            this.guest   = guest;
+            this.room    = room;
+            this.message = message;
         }
 
-        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
-
-            Room room = rooms.getEntry(i);
-
-            if (room != null
-                    && roomNumber.equalsIgnoreCase(room.getRoomNumber())
-                    && "Ready".equalsIgnoreCase(room.getCleanlinessStatus())) {
-
-                return room;
-            }
+        static AllocationResult success(Guest guest, Room room, String message) {
+            return new AllocationResult(true, guest, room, message);
         }
 
-        return null;
+        static AllocationResult failure(String message) {
+            return new AllocationResult(false, null, null, message);
+        }
+
+        public boolean isSuccess()  { return success; }
+        public Guest   getGuest()   { return guest;   }
+        public Room    getRoom()    { return room;     }
+        public String  getMessage() { return message;  }
     }
 }
