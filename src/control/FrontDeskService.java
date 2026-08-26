@@ -317,4 +317,9 @@ public class FrontDeskService {
         list.replace(posA, list.getEntry(posB));
         list.replace(posB, temp);
     }
+
+    public ListInterface<BillingRecord> generateGuestBillingHistory(double minAmount, String roomTypeFilter) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'generateGuestBillingHistory'");
+    }
 }
