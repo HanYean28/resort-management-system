@@ -4,15 +4,14 @@ import adt.ArrayList;
 import adt.ArrayQueue;
 import adt.ListInterface;
 import adt.QueueInterface;
+import dao.BillingDAO;
+import dao.BookingDAO;
+import dao.RoomDAO;
+import entity.BillingRecord;
 import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -22,9 +21,6 @@ import java.time.temporal.ChronoUnit;
  * @author Chang Han Yean
  */
 public class BookingController {
-    private static final String BOOKINGS_FILE = "bookings.txt";
-    private static final String ROOMS_FILE = "rooms.txt";
-    private static final String BILLING_FILE = "billing.txt";
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public static final String FILTER_ALL = "ALL";
@@ -39,11 +35,17 @@ public class BookingController {
     private ListInterface<BookingRequest> bookings;
     private QueueInterface<BookingRequest> pendingQueue;
     private FrontDeskService frontDeskService;
+    private BookingDAO bookingDAO;
+    private RoomDAO roomDAO;
+    private BillingDAO billingDAO;
 
     public BookingController() {
         bookings = new ArrayList<>();
         pendingQueue = new ArrayQueue<>();
         frontDeskService = new FrontDeskService();
+        bookingDAO = new BookingDAO();
+        roomDAO = new RoomDAO();
+        billingDAO = new BillingDAO();
         loadBookingsFromFile();
         rebuildPendingQueue();
     }
@@ -88,8 +90,9 @@ public class BookingController {
             return "Guest already has an active booking for this date range.";
         }
 
-        BookingRequest booking = new BookingRequest(generateBookingId(), guest, TYPE_STANDARD,
+        BookingRequest booking = new BookingRequest(generateBookingId(), confirmationNo, TYPE_STANDARD,
                 requestedRoomType, checkInDate, checkOutDate, STATUS_PENDING, "N/A", getCurrentTimestamp());
+        booking.setGuest(guest);
         bookings.add(booking);
         pendingQueue.enqueue(booking);
         saveBookingsToFile();
@@ -112,8 +115,9 @@ public class BookingController {
             return "Guest already has an active booking for this date range.";
         }
 
-        BookingRequest booking = new BookingRequest(generateBookingId(), guest, TYPE_WALK_IN,
+        BookingRequest booking = new BookingRequest(generateBookingId(), confirmationNo, TYPE_WALK_IN,
                 requestedRoomType, checkInDate, checkOutDate, STATUS_PENDING, "N/A", getCurrentTimestamp());
+        booking.setGuest(guest);
         if (!hasSpareRoomAfterPendingStandardBookings(booking)) {
             return "No " + requestedRoomType
                     + " room is available for walk-in booking because pending standard bookings are reserved first.";
@@ -182,7 +186,7 @@ public class BookingController {
     public String assignRoomToBookingForGuest(String confirmationNo, String roomNumber) {
         for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
             BookingRequest booking = bookings.getEntry(i);
-            if (booking.getGuest().getConfirmationNo().equalsIgnoreCase(confirmationNo)
+            if (booking.getConfirmationNo().equalsIgnoreCase(confirmationNo)
                     && (booking.getStatus().equals(STATUS_PENDING)
                             || booking.getStatus().equals(STATUS_ASSIGNED))) {
                 if (hasDateClash(roomNumber, booking)) {
@@ -353,44 +357,19 @@ public class BookingController {
 
     private void loadBookingsFromFile() {
         bookings.clear();
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-                if (parts.length >= 9) {
-                    Guest guest = frontDeskService.searchByConfirmationNumber(parts[1]);
-                    if (guest != null) {
-                        String status = normalizeLoadedStatus(parts[2], parts[6]);
-                        bookings.add(new BookingRequest(parts[0], guest, parts[2], parts[3], parts[4],
-                                parts[5], status, parts[7], parts[8]));
-                    }
-                }
+        ListInterface<BookingRequest> loadedBookings = bookingDAO.loadBookings();
+        for (int i = 1; i <= loadedBookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = loadedBookings.getEntry(i);
+            Guest guest = getGuest(booking.getConfirmationNo());
+            if (guest != null) {
+                booking.setGuest(guest);
+                bookings.add(booking);
             }
-        } catch (IOException e) {
-            saveBookingsToFile();
         }
     }
 
     private void saveBookingsToFile() {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE))) {
-            bw.write("# bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt");
-            bw.newLine();
-            for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
-                BookingRequest booking = bookings.getEntry(i);
-                bw.write(booking.getBookingId() + "|" + booking.getGuest().getConfirmationNo() + "|"
-                        + booking.getBookingType() + "|" + booking.getRequestedRoomType() + "|"
-                        + booking.getCheckInDate() + "|" + booking.getCheckOutDate() + "|"
-                        + booking.getStatus() + "|" + booking.getAssignedRoomNumber() + "|"
-                        + booking.getCreatedAt());
-                bw.newLine();
-            }
-        } catch (IOException e) {
-            // Keep the console flow simple; failed saves are ignored in this prototype.
-        }
+        bookingDAO.saveBookings(bookings);
     }
 
     private void rebuildPendingQueue() {
@@ -499,7 +478,7 @@ public class BookingController {
 
         for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
             BookingRequest existing = bookings.getEntry(i);
-            if (!existing.getGuest().getConfirmationNo().equalsIgnoreCase(confirmationNo)
+            if (!existing.getConfirmationNo().equalsIgnoreCase(confirmationNo)
                     || !isActiveBooking(existing)) {
                 continue;
             }
@@ -528,35 +507,7 @@ public class BookingController {
     }
 
     private ListInterface<Room> loadRoomsFromFile() {
-        ListInterface<Room> rooms = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(ROOMS_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-                String[] parts = line.split("\\|");
-                if (parts.length >= 7) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]));
-                } else if (parts.length >= 6) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]));
-                } else if (parts.length == 4) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3]));
-                } else if (parts.length == 3) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], "N/A"));
-                }
-            }
-        } catch (IOException e) {
-            // If file doesn't exist, return empty room list.
-        }
-        return rooms;
-    }
-
-    private String normalizeLoadedStatus(String bookingType, String status) {
-        if (bookingType.equals(TYPE_WALK_IN) && status.equals(STATUS_ASSIGNED)) {
-            return STATUS_CHECKED_IN;
-        }
-        return status;
+        return roomDAO.loadRooms();
     }
 
     private int countRoomTypeRequests(String roomType, String bookingTypeFilter) {
@@ -665,30 +616,7 @@ public class BookingController {
     }
 
     private void saveRoomsToFile(ListInterface<Room> rooms) {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(ROOMS_FILE))) {
-            bw.write("# roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes");
-            bw.newLine();
-            for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
-                Room room = rooms.getEntry(i);
-                bw.write(room.getRoomNumber() + "|" + room.getRoomType() + "|" + room.getCleanlinessStatus()
-                        + "|" + room.getOccupancyStatus() + "|" + room.getLastUpdate() + "|"
-                        + room.getDirtySince() + "|" + room.getLastTurnaroundMinutes());
-                bw.newLine();
-            }
-        } catch (IOException e) {
-            // Keep the console flow simple; failed saves are ignored in this prototype.
-        }
-    }
-
-    private boolean isRoomVacant(String roomNumber) {
-        ListInterface<Room> rooms = loadRoomsFromFile();
-        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
-            Room room = rooms.getEntry(i);
-            if (room.getRoomNumber().equalsIgnoreCase(roomNumber)) {
-                return room.getOccupancyStatus().equalsIgnoreCase("Vacant");
-            }
-        }
-        return false;
+        roomDAO.saveRooms(rooms);
     }
 
     private String validateAssignedRoomForCheckIn(String roomNumber) {
@@ -746,7 +674,8 @@ public class BookingController {
     }
 
     private void generatePaidBill(BookingRequest booking) {
-        if (billExists(booking.getBookingId())) {
+        ListInterface<BillingRecord> bills = billingDAO.loadBillingRecords();
+        if (billExists(bills, booking.getBookingId())) {
             return;
         }
 
@@ -755,71 +684,37 @@ public class BookingController {
                 LocalDate.parse(booking.getCheckOutDate()));
         double amount = nights * getRoomRate(booking.getRequestedRoomType());
 
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BILLING_FILE, true))) {
-            bw.write(generateBillId() + "|" + booking.getBookingId() + "|"
-                    + booking.getGuest().getConfirmationNo() + "|" + booking.getAssignedRoomNumber() + "|"
-                    + booking.getRequestedRoomType() + "|" + booking.getCheckInDate() + "|"
-                    + booking.getCheckOutDate() + "|" + nights + "|" + amount + "|Paid|"
-                    + getCurrentTimestamp());
-            bw.newLine();
-        } catch (IOException e) {
-            // Keep the console flow simple; failed saves are ignored in this prototype.
-        }
+        billingDAO.appendBillingRecord(new BillingRecord(generateNextBillId(bills), booking.getBookingId(),
+                booking.getConfirmationNo(), booking.getAssignedRoomNumber(),
+                booking.getRequestedRoomType(), booking.getCheckInDate(), booking.getCheckOutDate(),
+                nights, amount, "Paid", getCurrentTimestamp()));
     }
 
-    private boolean billExists(String bookingId) {
-        try (BufferedReader br = new BufferedReader(new FileReader(BILLING_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-                if (parts.length >= 2 && parts[1].equalsIgnoreCase(bookingId)) {
-                    return true;
-                }
+    private boolean billExists(ListInterface<BillingRecord> bills, String bookingId) {
+        for (int i = 1; i <= bills.getNumberOfEntries(); i++) {
+            if (bills.getEntry(i).getBookingId().equalsIgnoreCase(bookingId)) {
+                return true;
             }
-        } catch (IOException e) {
-            createBillingFileIfMissing();
         }
         return false;
     }
 
-    private String generateBillId() {
+    private String generateNextBillId(ListInterface<BillingRecord> bills) {
         int max = 0;
-        try (BufferedReader br = new BufferedReader(new FileReader(BILLING_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-                if (parts.length > 0 && parts[0].startsWith("BL")) {
-                    try {
-                        int number = Integer.parseInt(parts[0].substring(2));
-                        if (number > max) {
-                            max = number;
-                        }
-                    } catch (NumberFormatException e) {
-                        // Ignore non-standard bill ids.
+        for (int i = 1; i <= bills.getNumberOfEntries(); i++) {
+            String id = bills.getEntry(i).getBillId();
+            if (id.startsWith("BL")) {
+                try {
+                    int number = Integer.parseInt(id.substring(2));
+                    if (number > max) {
+                        max = number;
                     }
+                } catch (NumberFormatException e) {
+                    // Ignore non-standard bill ids.
                 }
             }
-        } catch (IOException e) {
-            createBillingFileIfMissing();
         }
         return String.format("BL%04d", max + 1);
-    }
-
-    private void createBillingFileIfMissing() {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BILLING_FILE))) {
-            bw.write("# billId|bookingId|confirmationNo|roomNumber|roomType|checkInDate|checkOutDate|nights|amount|paymentStatus|createdAt");
-            bw.newLine();
-        } catch (IOException e) {
-            // Keep the console flow simple; failed saves are ignored in this prototype.
-        }
     }
 
     private double getRoomRate(String roomType) {

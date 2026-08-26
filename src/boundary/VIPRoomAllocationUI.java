@@ -4,6 +4,7 @@ import control.VIPRoomAllocation;
 import control.VIPRoomAllocation.AllocationResult;
 import entity.Guest;
 import entity.Room;
+import utility.UIUtils;
 
 import java.util.List;
 import java.util.Scanner;

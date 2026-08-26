@@ -4,14 +4,11 @@ import adt.ArrayList;
 import adt.ArrayStack;
 import adt.ListInterface;
 import adt.StackInterface;
+import dao.HousekeepingLogDAO;
+import dao.RoomDAO;
 import entity.HousekeepingLog;
 import entity.Room;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -19,8 +16,6 @@ import java.time.format.DateTimeFormatter;
  * @author Chang Han Yean
  */
 public class HousekeepingController {
-    private static final String DATA_FILE = "rooms.txt";
-    private static final String TASK_HISTORY_FILE = "housekeeping_task_history.txt";
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public static final String STATUS_DIRTY = "Dirty";
@@ -40,54 +35,29 @@ public class HousekeepingController {
     private ListInterface<Room> rooms;
     private ListInterface<HousekeepingLog> taskHistory;
     private ListInterface<RoomRollbackEntry> roomRollbackStacks;
+    private RoomDAO roomDAO;
+    private HousekeepingLogDAO housekeepingLogDAO;
 
     public HousekeepingController() {
         rooms = new ArrayList<>();
         taskHistory = new ArrayList<>();
         roomRollbackStacks = new ArrayList<>();
+        roomDAO = new RoomDAO();
+        housekeepingLogDAO = new HousekeepingLogDAO();
         loadRoomsFromFile();
         loadTaskHistoryFromFile();
     }
 
     public void loadRoomsFromFile() {
         rooms.clear();
-        try (BufferedReader br = new BufferedReader(new FileReader(DATA_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-                if (parts.length >= 7) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]));
-                } else if (parts.length >= 6) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]));
-                } else if (parts.length == 4) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3]));
-                } else if (parts.length == 3) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], "N/A"));
-                }
-            }
-        } catch (IOException e) {
-            // Start with an empty room list if the file is missing.
+        ListInterface<Room> loadedRooms = roomDAO.loadRooms();
+        for (int i = 1; i <= loadedRooms.getNumberOfEntries(); i++) {
+            rooms.add(loadedRooms.getEntry(i));
         }
     }
 
     public void saveRoomsToFile() {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(DATA_FILE))) {
-            bw.write("# roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes");
-            bw.newLine();
-            for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
-                Room room = rooms.getEntry(i);
-                bw.write(room.getRoomNumber() + "|" + room.getRoomType() + "|" + room.getCleanlinessStatus()
-                        + "|" + room.getOccupancyStatus() + "|" + room.getLastUpdate() + "|" + room.getDirtySince() + "|"
-                        + room.getLastTurnaroundMinutes());
-                bw.newLine();
-            }
-        } catch (IOException e) {
-            // Keep the console flow simple; failed saves are ignored in this prototype.
-        }
+        roomDAO.saveRooms(rooms);
     }
 
     public ListInterface<Room> getAllRooms() {
@@ -201,7 +171,10 @@ public class HousekeepingController {
         }
 
         HousekeepingLog lastLog = entry.getStack().pop();
-        Room room = lastLog.getRoom();
+        Room room = getRoom(lastLog.getRoomNumber());
+        if (room == null) {
+            return null;
+        }
         applyStatusChange(room, lastLog.getNewStatus(), lastLog.getOldStatus(), false,
                 HousekeepingLog.ACTION_ROLLBACK);
         return lastLog;
@@ -212,7 +185,7 @@ public class HousekeepingController {
         for (int i = 1; i <= taskHistory.getNumberOfEntries(); i++) {
             HousekeepingLog log = taskHistory.getEntry(i);
             if (roomNumber.equals(FILTER_ALL)
-                    || log.getRoom().getRoomNumber().equalsIgnoreCase(roomNumber)) {
+                    || log.getRoomNumber().equalsIgnoreCase(roomNumber)) {
                 results.add(log);
             }
         }
@@ -242,7 +215,7 @@ public class HousekeepingController {
         for (int i = 1; i <= taskHistory.getNumberOfEntries(); i++) {
             HousekeepingLog log = taskHistory.getEntry(i);
             boolean matchesRoom = roomNumberFilter.equals(FILTER_ALL)
-                    || log.getRoom().getRoomNumber().equalsIgnoreCase(roomNumberFilter);
+                    || log.getRoomNumber().equalsIgnoreCase(roomNumberFilter);
             boolean matchesTransition = transitionFilter.equals(FILTER_ALL)
                     || log.getNewStatus().equalsIgnoreCase(transitionFilter);
 
@@ -283,7 +256,7 @@ public class HousekeepingController {
             room.setDirtySince("N/A");
         }
 
-        HousekeepingLog log = new HousekeepingLog(room, oldStatus, newStatus, timestamp, action);
+        HousekeepingLog log = new HousekeepingLog(room.getRoomNumber(), oldStatus, newStatus, timestamp, action);
         if (allowRollback) {
             pushRollbackLog(room.getRoomNumber(), log);
         }
@@ -293,36 +266,15 @@ public class HousekeepingController {
 
     private void loadTaskHistoryFromFile() {
         taskHistory.clear();
-        try (BufferedReader br = new BufferedReader(new FileReader(TASK_HISTORY_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-                if (parts.length >= 4) {
-                    Room room = getRoom(parts[0]);
-                    if (room != null) {
-                        String action = parts.length >= 5 ? parts[4] : HousekeepingLog.ACTION_UPDATE;
-                        taskHistory.add(new HousekeepingLog(room, parts[1], parts[2], parts[3], action));
-                    }
-                }
-            }
-        } catch (IOException e) {
-            // Start with an empty task history if the file is missing.
+        ListInterface<HousekeepingLog> loadedLogs = housekeepingLogDAO.loadLogs();
+        for (int i = 1; i <= loadedLogs.getNumberOfEntries(); i++) {
+            taskHistory.add(loadedLogs.getEntry(i));
         }
     }
 
     private void appendTaskHistory(HousekeepingLog log) {
         taskHistory.add(log);
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(TASK_HISTORY_FILE, true))) {
-            bw.write(log.getRoom().getRoomNumber() + "|" + log.getOldStatus() + "|" + log.getNewStatus()
-                    + "|" + log.getTimestamp() + "|" + log.getAction());
-            bw.newLine();
-        } catch (IOException e) {
-            // Keep the console flow simple; failed saves are ignored in this prototype.
-        }
+        housekeepingLogDAO.appendLog(log);
     }
 
     private boolean isActiveTask(Room room) {

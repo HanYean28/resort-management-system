@@ -4,6 +4,7 @@ import adt.ListInterface;
 import control.HousekeepingController;
 import entity.HousekeepingLog;
 import entity.Room;
+import utility.UIUtils;
 
 import java.util.Scanner;
 
@@ -231,7 +232,7 @@ public class HousekeepingUI {
             HousekeepingLog log = logs.getEntry(i);
             System.out.printf("%-4d | %-6s | %-19s | %-8s | %-22s | %-22s%n",
                     i,
-                    log.getRoom().getRoomNumber(),
+                    log.getRoomNumber(),
                     log.getTimestamp(),
                     log.getAction(),
                     log.getOldStatus(),
@@ -541,7 +542,7 @@ public class HousekeepingUI {
             HousekeepingLog log = logs.getEntry(i);
             System.out.printf("%-4d | %-6s | %-19s | %-8s | %-22s | %-22s%n",
                     i,
-                    log.getRoom().getRoomNumber(),
+                    log.getRoomNumber(),
                     log.getTimestamp(),
                     log.getAction(),
                     log.getOldStatus(),

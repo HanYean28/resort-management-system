@@ -1,14 +1,14 @@
 package control;
 
 import adt.ArrayPriorityQueue;
+import adt.ListInterface;
+import dao.BookingDAO;
+import dao.GuestDAO;
+import dao.RoomDAO;
+import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -27,14 +27,6 @@ import java.util.Map;
  * @author Kaizen Soh
  */
 public class VIPRoomAllocation {
-
-    // -------------------------------------------------------
-    // File paths
-    // -------------------------------------------------------
-
-    private static final String GUESTS_FILE   = "guests.txt";
-    private static final String ROOMS_FILE    = "rooms.txt";
-    private static final String BOOKINGS_FILE = "bookings.txt";
 
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -55,6 +47,10 @@ public class VIPRoomAllocation {
     /** Maps confirmationNo → requested room type for each VIP guest. */
     private Map<String, String> requestedRoomTypes;
 
+    private GuestDAO guestDAO;
+    private RoomDAO roomDAO;
+    private BookingDAO bookingDAO;
+
     // -------------------------------------------------------
     // Constructor
     // -------------------------------------------------------
@@ -68,6 +64,9 @@ public class VIPRoomAllocation {
         allRooms           = new ArrayList<>();
         allocationLog      = new ArrayList<>();
         requestedRoomTypes = new HashMap<>();
+        guestDAO           = new GuestDAO();
+        roomDAO            = new RoomDAO();
+        bookingDAO         = new BookingDAO();
 
         loadGuestsFromFile();
         loadRoomsFromFile();
@@ -89,47 +88,24 @@ public class VIPRoomAllocation {
      */
     private void loadGuestsFromFile() {
 
-        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
+        ListInterface<Guest> guests = guestDAO.loadGuests();
 
-            String line;
+        for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
 
-            while ((line = br.readLine()) != null) {
+            Guest guest = guests.getEntry(i);
+            guest.setLoyaltyTier(normaliseTier(guest.getLoyaltyTier()));
 
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-
-                if (parts.length < 4) {
-                    continue;
-                }
-
-                String confirmationNo = parts[0].trim();
-                String name           = parts[1].trim();
-                String phone          = parts[2].trim();
-                String loyaltyTier    = normaliseTier(parts[3].trim());
-
-                // Skip non-VIP guests.
-                if (loyaltyTier.equalsIgnoreCase("NONE")) {
-                    continue;
-                }
-
-                // Skip duplicates already in the queue.
-                if (vipQueue.find(confirmationNo) != null) {
-                    continue;
-                }
-
-                Guest guest = new Guest(confirmationNo, name, phone, loyaltyTier);
-                vipQueue.add(guest);
+            // Skip non-VIP guests.
+            if (guest.getLoyaltyTier().equalsIgnoreCase("NONE")) {
+                continue;
             }
 
-            System.out.println("[VIP] Guests loaded from " + GUESTS_FILE);
+            // Skip duplicates already in the queue.
+            if (vipQueue.find(guest.getConfirmationNo()) != null) {
+                continue;
+            }
 
-        } catch (IOException e) {
-            System.out.println("[VIP] Could not read " + GUESTS_FILE + ": " + e.getMessage());
+            vipQueue.add(guest);
         }
     }
 
@@ -144,50 +120,10 @@ public class VIPRoomAllocation {
     private void loadRoomsFromFile() {
 
         allRooms.clear();
+        ListInterface<Room> rooms = roomDAO.loadRooms();
 
-        try (BufferedReader br = new BufferedReader(new FileReader(ROOMS_FILE))) {
-
-            String line;
-
-            while ((line = br.readLine()) != null) {
-
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-
-                if (parts.length < 7) {
-                    continue;
-                }
-
-                String roomNumber            = parts[0].trim();
-                String roomType              = parts[1].trim();
-                String cleanlinessStatus     = parts[2].trim();
-                String occupancyStatus       = parts[3].trim();
-                String lastUpdate            = parts[4].trim();
-                String dirtySince            = parts[5].trim();
-                String lastTurnaroundMinutes = parts[6].trim();
-
-                Room room = new Room(
-                        roomNumber,
-                        roomType,
-                        cleanlinessStatus,
-                        occupancyStatus,
-                        lastUpdate,
-                        dirtySince,
-                        lastTurnaroundMinutes
-                );
-
-                allRooms.add(room);
-            }
-
-            System.out.println("[VIP] Rooms loaded from " + ROOMS_FILE);
-
-        } catch (IOException e) {
-            System.out.println("[VIP] Could not read " + ROOMS_FILE + ": " + e.getMessage());
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            allRooms.add(rooms.getEntry(i));
         }
     }
 
@@ -203,25 +139,26 @@ public class VIPRoomAllocation {
      */
     public void saveGuestsToFile() {
 
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(GUESTS_FILE))) {
+        ListInterface<Guest> guests = guestDAO.loadGuests();
+        Guest[] all = vipQueue.getAll();
 
-            bw.write("# confirmationNo|name|phone|loyaltyTier");
-            bw.newLine();
-
-            Guest[] all = vipQueue.getAll();
-
-            for (Guest g : all) {
-                if (g == null) continue;
-                bw.write(g.getConfirmationNo() + "|"
-                        + g.getName()          + "|"
-                        + g.getPhone()         + "|"
-                        + g.getLoyaltyTier());
-                bw.newLine();
+        for (Guest guest : all) {
+            if (guest != null) {
+                saveOrReplaceGuest(guests, guest);
             }
-
-        } catch (IOException e) {
-            System.out.println("[VIP] Could not save " + GUESTS_FILE + ": " + e.getMessage());
         }
+
+        guestDAO.saveGuests(guests);
+    }
+
+    private void saveOrReplaceGuest(ListInterface<Guest> guests, Guest guest) {
+        for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
+            if (guests.getEntry(i).getConfirmationNo().equalsIgnoreCase(guest.getConfirmationNo())) {
+                guests.replace(i, guest);
+                return;
+            }
+        }
+        guests.add(guest);
     }
 
     /**
@@ -231,26 +168,14 @@ public class VIPRoomAllocation {
      */
     public void saveRoomsToFile() {
 
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(ROOMS_FILE))) {
+        ListInterface<Room> rooms = new adt.ArrayList<>();
 
-            bw.write("# roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes");
-            bw.newLine();
-
-            for (Room r : allRooms) {
-                if (r == null) continue;
-                bw.write(r.getRoomNumber()            + "|"
-                        + r.getRoomType()             + "|"
-                        + r.getCleanlinessStatus()    + "|"
-                        + r.getOccupancyStatus()      + "|"
-                        + r.getLastUpdate()           + "|"
-                        + r.getDirtySince()           + "|"
-                        + r.getLastTurnaroundMinutes());
-                bw.newLine();
-            }
-
-        } catch (IOException e) {
-            System.out.println("[VIP] Could not save " + ROOMS_FILE + ": " + e.getMessage());
+        for (Room r : allRooms) {
+            if (r == null) continue;
+            rooms.add(r);
         }
+
+        roomDAO.saveRooms(rooms);
     }
 
     /**
@@ -264,22 +189,19 @@ public class VIPRoomAllocation {
         String bookingId  = generateNextBookingId();
         String createdAt  = LocalDateTime.now().format(TIMESTAMP_FORMAT);
 
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
-
-            bw.write(bookingId                + "|"
-                    + guest.getConfirmationNo() + "|"
-                    + "VIP"                     + "|"
-                    + room.getRoomType()         + "|"
-                    + "N/A"                      + "|"   // checkInDate — not captured at allocation
-                    + "N/A"                      + "|"   // checkOutDate
-                    + "Assigned"                 + "|"
-                    + room.getRoomNumber()        + "|"
-                    + createdAt);
-            bw.newLine();
-
-        } catch (IOException e) {
-            System.out.println("[VIP] Could not append to " + BOOKINGS_FILE + ": " + e.getMessage());
-        }
+        ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
+        BookingRequest booking = new BookingRequest(
+                bookingId,
+                guest.getConfirmationNo(),
+                "VIP",
+                room.getRoomType(),
+                "N/A",
+                "N/A",
+                "Assigned",
+                room.getRoomNumber(),
+                createdAt);
+        bookings.add(booking);
+        bookingDAO.saveBookings(bookings);
     }
 
     /**
@@ -289,30 +211,17 @@ public class VIPRoomAllocation {
     private String generateNextBookingId() {
 
         int max = 0;
+        ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
 
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-
-            String line;
-
-            while ((line = br.readLine()) != null) {
-
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-
-                if (parts.length > 0 && parts[0].startsWith("B")) {
-                    try {
-                        int num = Integer.parseInt(parts[0].substring(1));
-                        if (num > max) max = num;
-                    } catch (NumberFormatException ignored) {}
-                }
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            String id = bookings.getEntry(i).getBookingId();
+            if (id.startsWith("B")) {
+                try {
+                    int num = Integer.parseInt(id.substring(1));
+                    if (num > max) max = num;
+                } catch (NumberFormatException ignored) {}
             }
-
-        } catch (IOException ignored) {}
+        }
 
         return String.format("B%04d", max + 1);
     }
@@ -606,32 +515,16 @@ public class VIPRoomAllocation {
     public String generateConfirmationNo() {
 
         int max = 0;
+        ListInterface<Guest> guests = guestDAO.loadGuests();
 
-        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
-
-            String line;
-
-            while ((line = br.readLine()) != null) {
-
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
+        for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
+            try {
+                int num = Integer.parseInt(guests.getEntry(i).getConfirmationNo());
+                if (num > max) {
+                    max = num;
                 }
-
-                String[] parts = line.split("\\|");
-
-                if (parts.length >= 1) {
-                    try {
-                        int num = Integer.parseInt(parts[0].trim());
-                        if (num > max) {
-                            max = num;
-                        }
-                    } catch (NumberFormatException ignored) {}
-                }
-            }
-
-        } catch (IOException ignored) {}
+            } catch (NumberFormatException ignored) {}
+        }
 
         return String.format("%08d", max + 1);
     }
