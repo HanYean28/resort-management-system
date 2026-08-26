@@ -717,7 +717,7 @@ public class BookingController {
         return String.format("BL%04d", max + 1);
     }
 
-    private double getRoomRate(String roomType) {
+    public double getRoomRate(String roomType) {
         if (roomType.equalsIgnoreCase("Standard")) {
             return 200.0;
         }
