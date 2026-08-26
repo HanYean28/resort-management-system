@@ -12,6 +12,7 @@ import java.io.IOException;
 
 /**
  * Handles booking file operations for bookings.txt.
+ * @author Elwin Goh Yao Zu
  */
 public class BookingDAO {
     private static final String DATA_FILE = "bookings.txt";

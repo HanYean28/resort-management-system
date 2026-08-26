@@ -1,7 +1,7 @@
 package entity;
 
 /**
- * @author Chang Han Yean
+ * @author Elwin Goh Yao Zu
  */
 public class BookingRequest {
     private String bookingId;

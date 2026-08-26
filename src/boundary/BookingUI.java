@@ -10,7 +10,7 @@ import java.time.LocalDate;
 import java.util.Scanner;
 
 /**
- * @author Chang Han Yean
+ * @author Elwin Goh Yao Zu
  */
 public class BookingUI {
     private BookingController controller;
