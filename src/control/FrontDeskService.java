@@ -49,20 +49,11 @@ public class FrontDeskService {
         for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
             guestTree.add(guests.getEntry(i));
         }
-        if (guests.isEmpty()) {
-            loadSampleData();
-        }
     }
 
     /** Hardcoded sample data so this module can be demonstrated/tested standalone.
      *  Room numbers here match the real Housekeeping rooms.txt (101-108). */
-    private void loadSampleData() {
-        guestTree.add(new Guest("20260701", "Tan Wei Ling", "012-3456789", "NONE"));
-        guestTree.add(new Guest("20260702", "Nurul Aisyah", "013-2345678", "Diamond"));
-        guestTree.add(new Guest("20260703", "Rajesh Kumar", "016-7891234", "Platinum"));
-        guestTree.add(new Guest("20260704", "Chong Mei Yee", "011-9988776", "NONE"));
-        guestTree.add(new Guest("20260705", "Ahmad Faiz", "019-2233445", "Elite"));
-    }
+
 
     /** Saves all current guest records back to guests.txt (in confirmationNo order). */
     public void saveGuestsToFile() {
