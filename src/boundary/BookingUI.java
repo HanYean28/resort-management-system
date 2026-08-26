@@ -415,9 +415,9 @@ public class BookingUI {
     private String promptRoomType() {
         while (true) {
             System.out.println("\nSelect Room Type:");
-            System.out.println(" [1] Standard");
-            System.out.println(" [2] Deluxe");
-            System.out.println(" [3] Suite");
+            System.out.printf(" [1] Standard (RM %.2f per night)%n", controller.getRoomRate("Standard"));
+            System.out.printf(" [2] Deluxe   (RM %.2f per night)%n", controller.getRoomRate("Deluxe"));
+            System.out.printf(" [3] Suite    (RM %.2f per night)%n", controller.getRoomRate("Suite"));
             System.out.println(" [0] Cancel");
             UIUtils.printSectionLine();
             System.out.print("Please enter choice (0-3): ");
