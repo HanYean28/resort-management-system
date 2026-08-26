@@ -17,7 +17,7 @@ import java.util.Comparator;
  *
  * @param <T> the element type stored in the heap
  *
- * @author Lim How Voon
+ * @author Kaizen Soh
  */
 public class BinaryHeap<T> {
 

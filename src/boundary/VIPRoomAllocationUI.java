@@ -26,7 +26,7 @@ import java.util.Scanner;
  *   8. Demo — Load Sample Data
  *   0. Exit
  *
- * @author Lim How Voon
+ * @author Kaizen Soh
  */
 public class VIPRoomAllocationUI {
 
@@ -143,7 +143,7 @@ public class VIPRoomAllocationUI {
 
         String name  = readNonEmpty("Guest name        : ");
         String phone = readNonEmpty("Phone number      : ");
-        String tier  = readTier("Loyalty tier      : ");
+        String tier  = readTier();
         String requestedRoomType = readRoomType("Requested room type: ");
 
         Guest guest = new Guest(confirmationNo, name, phone, tier);
@@ -559,22 +559,29 @@ public class VIPRoomAllocationUI {
     // -------------------------------------------------------
 
     /**
-     * Prompts for a room type and validates against Standard, Deluxe, Suite.
+     * Displays a numbered room type menu and returns
+     * the selected room type string.
+     * Loops until a valid integer between 1 and 3 is entered.
      */
     private String readRoomType(String prompt) {
 
-        print("  Valid types: Standard, Deluxe, Suite");
+        print("  Select Room Type:");
+        print("    [1] Standard");
+        print("    [2] Deluxe");
+        print("    [3] Suite");
+        print("");
 
         while (true) {
-            String input = readNonEmpty(prompt).trim();
-            if (input.equalsIgnoreCase("Standard")
-                    || input.equalsIgnoreCase("Deluxe")
-                    || input.equalsIgnoreCase("Suite")) {
-                // Normalise to title case.
-                return input.substring(0, 1).toUpperCase()
-                     + input.substring(1).toLowerCase();
+
+            int choice = readInt("  Enter choice [1-3]: ");
+
+            switch (choice) {
+                case 1: return "Standard";
+                case 2: return "Deluxe";
+                case 3: return "Suite";
+                default:
+                    printError("Invalid choice. Please enter a number between 1 and 3.");
             }
-            printError("Invalid type. Choose from: Standard, Deluxe, Suite");
         }
     }
 
@@ -598,22 +605,33 @@ public class VIPRoomAllocationUI {
     }
 
     /**
-     * Prompts for a loyalty tier and validates against known values.
-     * Shows the valid tiers if the input is unrecognised.
+     * Displays a numbered loyalty tier menu and returns
+     * the selected tier string.
+     * Loops until a valid integer between 1 and 5 is entered.
      */
-    private String readTier(String prompt) {
+    private String readTier() {
 
-        print("  Valid tiers: Diamond, Elite, Platinum, Gold, Silver, None");
+        print("  Select Loyalty Tier:");
+        print("    [1] Diamond");
+        print("    [2] Elite");
+        print("    [3] Platinum");
+        print("    [4] Gold");
+        print("    [5] Silver");
+        print("");
 
         while (true) {
-            String input = readNonEmpty(prompt).trim().toUpperCase();
-            for (String t : VALID_TIERS) {
-                if (t.equals(input)) {
-                    return t.substring(0, 1).toUpperCase()
-                         + t.substring(1).toLowerCase();    // normalise case
-                }
+
+            int choice = readInt("  Enter choice [1-5]: ");
+
+            switch (choice) {
+                case 1: return "Diamond";
+                case 2: return "Elite";
+                case 3: return "Platinum";
+                case 4: return "Gold";
+                case 5: return "Silver";
+                default:
+                    printError("Invalid choice. Please enter a number between 1 and 5.");
             }
-            printError("Unknown tier. Choose from: Diamond, Elite, Platinum, Gold, Silver, None");
         }
     }
 

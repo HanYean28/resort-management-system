@@ -23,7 +23,7 @@ import entity.Guest;
  * the codebase (VIPRoomAllocation, UI, Simulation) does not
  * need any modification.
  *
- * @author Lim How Voon
+ * @author Kaizen Soh
  */
 public class ArrayPriorityQueue {
 
