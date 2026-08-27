@@ -51,9 +51,6 @@ public class FrontDeskService {
         }
     }
 
-    /** Hardcoded sample data so this module can be demonstrated/tested standalone.
-     *  Room numbers here match the real Housekeeping rooms.txt (101-108). */
-
 
     /** Saves all current guest records back to guests.txt (in confirmationNo order). */
     public void saveGuestsToFile() {
@@ -309,8 +306,4 @@ public class FrontDeskService {
         list.replace(posB, temp);
     }
 
-    public ListInterface<BillingRecord> generateGuestBillingHistory(double minAmount, String roomTypeFilter) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'generateGuestBillingHistory'");
-    }
 }
