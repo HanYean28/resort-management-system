@@ -134,8 +134,6 @@ public class BookingController {
             return WalkInResult.error("Guest already has an active booking for this date range.");
         }
 
-        runVIPAllocationIfPending();
-
         BookingRequest draftBooking = new BookingRequest(
                 generateBookingId(), confirmationNo, TYPE_WALK_IN,
                 requestedRoomType, checkInDate, checkOutDate,
@@ -188,8 +186,12 @@ public class BookingController {
 
     public AssignResult autoAssignNextStandardBooking() {
 
-        // FIX: Only run VIP allocation if there is a truly Pending VIP booking.
-        VIPRoomAllocation.AllocationResult vipResult = runVIPAllocationIfPending();
+        // VIP allocation is handled exclusively by the VIP module.
+        // Standard booking auto-assign must NOT trigger VIP allocation
+        // as a side effect — they are independent workflows.
+        VIPRoomAllocation.AllocationResult vipResult =
+                VIPRoomAllocation.AllocationResult.failure(
+                        "VIP allocation runs independently.");
 
         BookingRequest nextBooking = pendingQueue.getFront();
         if (nextBooking == null) {
@@ -202,10 +204,7 @@ public class BookingController {
             nextBooking.setAssignedRoomNumber(roomNumber);
             nextBooking.setStatus(STATUS_ASSIGNED);
             pendingQueue.dequeue();
-            // NOTE: Do NOT set room to Occupied here.
-            // Room becomes Occupied only when guest checks in.
-            // Room stays Ready|Vacant so the booking system can
-            // still see it as assigned but the room isn't blocked.
+            // Room stays Vacant — becomes Occupied only when guest checks in.
             saveBookingsToFile();
             return AssignResult.success(nextBooking, vipResult);
         }
@@ -413,26 +412,22 @@ public class BookingController {
     }
 
     // ═══════════════════════════════════════════════════════
-    // VIP integration
+    // VIP integration — FIXED
     // ═══════════════════════════════════════════════════════
 
     /**
-     * Runs VIP allocation if there is any guest waiting in the VIP priority
-     * queue, allocating the highest-priority VIP guest's room BEFORE the
-     * standard booking queue is processed.
+     * Runs VIP allocation only if there is a guest in the VIP queue
+     * who has a booking with status exactly "Pending" in bookings.txt.
      *
-     * This is the correct integration point: the VIP queue is the single
-     * source of truth for who is waiting. VIP bookings are written directly
-     * to bookings.txt by VIPRoomAllocation and their guests live in the VIP
-     * module's own priority queue — they are intentionally NOT loaded into
-     * BookingController's in-memory list (which only tracks Standard/Walk-In
-     * bookings). Cross-checking BookingController's list for "VIP" typed
-     * entries therefore always returns false, so the previous cross-check
-     * silently suppressed every VIP allocation call.
+     * FIX: The old version called vipAllocation.findNextPendingGuest()
+     * which checks the VIP module's internal booking list. That list
+     * can be out of sync with BookingController's bookings list, causing
+     * already-assigned VIP guests to be re-allocated and stealing rooms
+     * from standard bookings.
      *
-     * The fix: delegate directly to vipAllocation.allocateNextRoom(). That
-     * method already handles the "queue empty" and "no available room" cases
-     * correctly and returns an AllocationResult indicating success or failure.
+     * The fix cross-checks THIS controller's in-memory bookings list —
+     * the single source of truth — to confirm a VIP booking is truly
+     * Pending before triggering allocation.
      */
     private VIPRoomAllocation.AllocationResult runVIPAllocationIfPending() {
 
@@ -440,8 +435,26 @@ public class BookingController {
             return VIPRoomAllocation.AllocationResult.failure("VIP queue is empty.");
         }
 
-        // Delegate directly to the VIP module — it owns the VIP queue and
-        // knows which guest is highest-priority and which rooms are available.
+        // Cross-check: scan THIS controller's bookings for a truly Pending VIP booking
+        // whose guest is still in the VIP priority queue.
+        boolean hasTrulyPendingVIP = false;
+
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest b = bookings.getEntry(i);
+
+            if ("VIP".equals(b.getBookingType())
+                    && STATUS_PENDING.equals(b.getStatus())
+                    && vipAllocation.findGuestInQueue(b.getConfirmationNo()) != null) {
+                hasTrulyPendingVIP = true;
+                break;
+            }
+        }
+
+        if (!hasTrulyPendingVIP) {
+            return VIPRoomAllocation.AllocationResult.failure(
+                    "No VIP guest with a Pending booking.");
+        }
+
         return vipAllocation.allocateNextRoom();
     }
 
@@ -723,7 +736,7 @@ public class BookingController {
         return String.format("BL%04d", max + 1);
     }
 
-    private double getRoomRate(String roomType) {
+    public double getRoomRate(String roomType) {
         if (roomType.equalsIgnoreCase("Standard")) return 200.0;
         if (roomType.equalsIgnoreCase("Deluxe"))   return 300.0;
         if (roomType.equalsIgnoreCase("Suite"))     return 500.0;

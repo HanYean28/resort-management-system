@@ -5,8 +5,8 @@ import control.FrontDeskService;
 import entity.BillingRecord;
 import entity.Guest;
 import entity.Room;
-import utility.UIUtils;
 import java.util.Scanner;
+import utility.UIUtils;
 
 /**
  * @author Lim How Voon
@@ -29,7 +29,7 @@ public class FrontDeskUI {
             System.out.println(" [2] Search Guest by Confirmation Number");
             System.out.println(" [3] Remove Guest Record");
             System.out.println(" [4] Generate Report 1: Guest Directory Report");
-            System.out.println(" [5] Generate Report 2: Guest Billing Report");
+            System.out.println(" [5] Generate Report 2: Guest Billing History Report");
             System.out.println(" [6] View Rooms Available Today");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
@@ -90,7 +90,7 @@ public class FrontDeskUI {
         UIUtils.clearScreen();
         UIUtils.printHeader("SEARCH GUEST BY CONFIRMATION NUMBER");
 
-        System.out.print("Enter Confirmation No: ");
+        System.out.print("Enter 8-digit Confirmation No: ");
         String confirmationNo = scanner.nextLine().trim();
         warnIfNotEightDigits(confirmationNo);
 
@@ -126,8 +126,8 @@ public class FrontDeskUI {
      */
     private void warnIfNotEightDigits(String confirmationNo) {
         if (!confirmationNo.matches("\\d{8}")) {
-            System.out.println("[Notice] Confirmation numbers are usually 8 digits — "
-                    + "double-check the number if you don't get a match.");
+            System.out.println("[Notice] Confirmation numbers are usually 8 digits. "
+                    + "Pls double-check the number if you don't get a match.");
         }
     }
 
@@ -176,7 +176,7 @@ public class FrontDeskUI {
 
     private void handleBillingReport() {
         UIUtils.clearScreen();
-        UIUtils.printHeader("GUEST BILLING REPORT");
+        UIUtils.printHeader("GUEST BILLING HISTORY REPORT");
 
         System.out.print("Minimum billing amount (RM): ");
         double minAmount = readDouble();
@@ -187,7 +187,7 @@ public class FrontDeskUI {
 
         ListInterface<BillingRecord> report = service.generateGuestBillingReport(minAmount, roomTypeFilter);
         System.out.println();
-        String title = "BILLING >= RM " + minAmount
+        String title = String.format("BILLING >= RM %.2f", minAmount)
                 + (roomTypeFilter.equalsIgnoreCase("ALL") ? "" : " - Room Type: " + roomTypeFilter)
                 + " (highest first)";
         UIUtils.printHeader(title);

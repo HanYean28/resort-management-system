@@ -1,20 +1,7 @@
 package entity;
 
 /**
- * Represents a hotel booking request.
- *
- * Two constructors are provided:
- *
- *   1. Guest-object constructor — used when a full Guest object is available
- *      (e.g. when creating a booking from the UI with a live Guest in memory).
- *
- *   2. String constructor — used when deserialising from bookings.txt,
- *      where only the confirmationNo string is stored per line.
- *      The confirmationNo is stored directly so BookingDAO and
- *      VIPRoomAllocation can serialise/deserialise without requiring
- *      a full Guest object to be loaded at the same time.
- *
- * @author Chang Han Yean
+ * @author Elwin Goh Yao Zu
  */
 public class BookingRequest {
 
