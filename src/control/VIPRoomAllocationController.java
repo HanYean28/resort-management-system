@@ -1007,6 +1007,148 @@ public class VIPRoomAllocationController {
         return new ArrayList<>(allocationLog);
     }
 
+    // -------------------------------------------------------
+    // VIP revenue report
+    // -------------------------------------------------------
+
+    /**
+     * Generates a revenue summary for PAID VIP bookings only.
+     *
+     * billing.txt does not store the loyalty tier directly, so the tier is
+     * derived from the nightly rate that was used when the VIP bill was
+     * generated. This keeps the report compatible with the existing file
+     * format and still works after a VIP guest has been removed from the
+     * waiting priority queue.
+     */
+    public List<VipRevenueRow> generateVipRevenueSummary() {
+        return generateVipRevenueSummary("ALL", "ALL");
+    }
+
+    /**
+     * Generates a revenue summary for PAID VIP bookings using optional
+     * loyalty-tier and room-type filters.
+     *
+     * @param tierFilter     ALL, Diamond, Elite, Platinum, Gold or Silver
+     * @param roomTypeFilter ALL, Standard, Deluxe or Suite
+     */
+    public List<VipRevenueRow> generateVipRevenueSummary(
+            String tierFilter, String roomTypeFilter) {
+
+        Map<String, Integer> bookingCounts = new HashMap<>();
+        Map<String, Double> revenues = new HashMap<>();
+
+        String[] tiers = {"Diamond", "Elite", "Platinum", "Gold", "Silver"};
+        for (String tier : tiers) {
+            bookingCounts.put(tier, 0);
+            revenues.put(tier, 0.0);
+        }
+
+        // Keep the booking ID and requested room type for VIP bookings.
+        Map<String, String> vipBookingRoomTypes = new HashMap<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+
+                String[] parts = line.split("\\|", -1);
+                if (parts.length >= 9 && parts[2].trim().equalsIgnoreCase("VIP")) {
+                    vipBookingRoomTypes.put(parts[0].trim(), parts[3].trim());
+                }
+            }
+        } catch (IOException ignored) {
+            // No VIP bookings means an empty revenue report.
+        }
+
+        // billing.txt format:
+        // billId|bookingId|confirmationNo|roomNumber|roomType|checkIn|checkOut|nights|amount|paymentStatus|createdAt
+        try (BufferedReader br = new BufferedReader(new FileReader(BILLING_FILE))) {
+            String line;
+
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+
+                String[] parts = line.split("\\|", -1);
+                if (parts.length < 10) continue;
+
+                String bookingId = parts[1].trim();
+                String paymentStatus = parts[9].trim();
+
+                if (!vipBookingRoomTypes.containsKey(bookingId)
+                        || !paymentStatus.equalsIgnoreCase("Paid")) {
+                    continue;
+                }
+
+                String bookingRoomType = vipBookingRoomTypes.get(bookingId);
+                if (!"ALL".equalsIgnoreCase(roomTypeFilter)
+                        && !bookingRoomType.equalsIgnoreCase(roomTypeFilter)) {
+                    continue;
+                }
+
+                try {
+                    long nights = Long.parseLong(parts[7].trim());
+                    double amount = Double.parseDouble(parts[8].trim());
+                    String tier = inferTierFromVipBill(nights, amount);
+
+                    if (tier == null) continue;
+
+                    if (!"ALL".equalsIgnoreCase(tierFilter)
+                            && !tier.equalsIgnoreCase(tierFilter)) {
+                        continue;
+                    }
+
+                    bookingCounts.put(tier, bookingCounts.get(tier) + 1);
+                    revenues.put(tier, revenues.get(tier) + amount);
+
+                } catch (NumberFormatException ignored) {
+                    // Skip malformed billing rows.
+                }
+            }
+
+        } catch (IOException ignored) {
+            // Return zero rows if billing.txt cannot be read.
+        }
+
+        List<VipRevenueRow> rows = new ArrayList<>();
+        for (String tier : tiers) {
+            if ("ALL".equalsIgnoreCase(tierFilter)
+                    || tier.equalsIgnoreCase(tierFilter)) {
+                rows.add(new VipRevenueRow(
+                        tier,
+                        bookingCounts.get(tier),
+                        revenues.get(tier)));
+            }
+        }
+
+        return rows;
+    }
+
+    private boolean containsIgnoreCase(List<String> values, String target) {
+        for (String value : values) {
+            if (value.equalsIgnoreCase(target)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Derives the loyalty tier from amount / nights using the same tier rates
+     * used when VIP billing records are created.
+     */
+    private String inferTierFromVipBill(long nights, double amount) {
+        if (nights <= 0) return null;
+
+        double rate = amount / nights;
+
+        if (Math.abs(rate - TIER_RATES.get("DIAMOND")) < 0.01)  return "Diamond";
+        if (Math.abs(rate - TIER_RATES.get("ELITE")) < 0.01)    return "Elite";
+        if (Math.abs(rate - TIER_RATES.get("PLATINUM")) < 0.01) return "Platinum";
+        if (Math.abs(rate - TIER_RATES.get("GOLD")) < 0.01)     return "Gold";
+        if (Math.abs(rate - TIER_RATES.get("SILVER")) < 0.01)   return "Silver";
+
+        return null;
+    }
+
     /**
      * Purpose:
      * Generates a unique 8-digit confirmation number by finding
@@ -1104,6 +1246,23 @@ public class VIPRoomAllocationController {
                 room.getRoomNumber(),
                 room.getRoomType()
         );
+    }
+
+    /** One row in the VIP revenue summary report. */
+    public static class VipRevenueRow {
+        private final String tier;
+        private final int bookingCount;
+        private final double revenue;
+
+        public VipRevenueRow(String tier, int bookingCount, double revenue) {
+            this.tier = tier;
+            this.bookingCount = bookingCount;
+            this.revenue = revenue;
+        }
+
+        public String getTier()       { return tier; }
+        public int getBookingCount()  { return bookingCount; }
+        public double getRevenue()    { return revenue; }
     }
 
     // -------------------------------------------------------
