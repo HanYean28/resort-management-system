@@ -23,6 +23,7 @@ public class BookingController {
     public static final String FILTER_ALL       = "ALL";
     public static final String TYPE_WALK_IN     = "Walk-In";
     public static final String TYPE_STANDARD    = "Standard";
+    public static final String TYPE_VIP         = "VIP";
     public static final String STATUS_PENDING   = "Pending";
     public static final String STATUS_ASSIGNED  = "Assigned";
     public static final String STATUS_CHECKED_IN  = "Checked In";
@@ -133,9 +134,9 @@ public class BookingController {
                 STATUS_PENDING, "N/A", getCurrentTimestamp());
         draftBooking.setGuest(guest);
 
-        if (!hasSpareRoomAfterPendingStandardBookings(draftBooking)) {
+        if (!hasSpareRoomAfterPendingBookings(draftBooking)) {
             return WalkInResult.error("No " + requestedRoomType
-                    + " room is available — pending standard bookings are reserved first.");
+                    + " room is available — pending bookings are reserved first.");
         }
 
         String roomNumber = findAvailableRoom(draftBooking);
@@ -529,10 +530,9 @@ public class BookingController {
         return null;
     }
 
-    private boolean hasSpareRoomAfterPendingStandardBookings(
-            BookingRequest walkInBooking) {
+    private boolean hasSpareRoomAfterPendingBookings(BookingRequest walkInBooking) {
         int available  = countAvailableRoomsForBooking(walkInBooking);
-        int protected_ = countPendingStandardBookingsToProtect(walkInBooking);
+        int protected_ = countPendingBookingsToProtect(walkInBooking);
         return available > protected_;
     }
 
@@ -551,11 +551,11 @@ public class BookingController {
         return count;
     }
 
-    private int countPendingStandardBookingsToProtect(BookingRequest walkIn) {
+    private int countPendingBookingsToProtect(BookingRequest walkIn) {
         int count = 0;
         for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
             BookingRequest b = bookings.getEntry(i);
-            if (b.getBookingType().equals(TYPE_STANDARD)
+            if ((b.getBookingType().equals(TYPE_VIP) || b.getBookingType().equals(TYPE_STANDARD))
                     && b.getStatus().equals(STATUS_PENDING)
                     && b.getRequestedRoomType().equalsIgnoreCase(
                             walkIn.getRequestedRoomType())
