@@ -1,3 +1,4 @@
 # billId|bookingId|confirmationNo|roomNumber|roomType|checkInDate|checkOutDate|nights|amount|paymentStatus|createdAt
 BL0001|B0001|20260706|103|Suite|2026-08-16|2026-08-18|2|1000.0|Paid|2026-08-16 12:23:00
 BL0002|B0002|20260706|101|Deluxe|2026-08-16|2026-08-17|1|300.0|Paid|2026-08-16 12:43:53
+BL0003|B0003|00000001|105|Suite|2026-08-28|2026-09-01|4|2000.0|Paid|2026-08-28 15:58:32

@@ -1,5 +1,4 @@
 # bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt
 B0001|20260706|Walk-In|Suite|2026-08-16|2026-08-18|Checked Out|103|2026-08-16 12:23:00
 B0002|20260706|Walk-In|Deluxe|2026-08-16|2026-08-17|Checked Out|101|2026-08-16 12:43:53
-B0003|87654322|Standard|Suite|2026-10-10|2026-10-12|Pending|N/A|2026-08-23 09:31:34
-B0004|87654323|Standard|Deluxe|2026-10-02|2026-10-05|Pending|N/A|2026-08-23 14:30:10
+B0003|00000001|Walk-In|Suite|2026-08-28|2026-09-01|Checked In|105|2026-08-28 15:58:32
