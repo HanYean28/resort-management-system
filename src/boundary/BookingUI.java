@@ -33,7 +33,7 @@ public class BookingUI {
             System.out.println(" [2] Add Walk-In Booking");
             System.out.println(" [3] Add Standard Booking");
             System.out.println(" [4] View Current Bookings");
-            System.out.println(" [5] Auto Assign Standard Booking");
+            System.out.println(" [5] Auto Assign Room");
             System.out.println(" [6] Check In Booking");
             System.out.println(" [7] Check Out Booking");
             System.out.println(" [8] Cancel Booking");
@@ -244,23 +244,43 @@ public class BookingUI {
      */
     private void handleAutoAssign() {
         UIUtils.clearScreen();
-        UIUtils.printHeader("AUTO ASSIGN STANDARD BOOKING");
+        UIUtils.printHeader("AUTO ASSIGN ROOM");
 
         AssignResult result = controller.autoAssignNextStandardBooking();
 
-        // Show VIP allocation side-effect if one happened.
-        if (result.getVIPResult() != null && result.getVIPResult().isSuccess()) {
-            System.out.println("[VIP] A VIP room was allocated first: "
-                    + result.getVIPResult().getMessage());
+        // Exactly ONE guest is allocated per click.
+        // VIP gets the click first whenever a Pending VIP booking exists.
+        if (result.isVIPAllocated()) {
+            control.VIPRoomAllocation.AllocationResult vip = result.getVIPResult();
+            Guest guest = vip.getGuest();
+            Room room = vip.getRoom();
+
+            System.out.println("VIP booking allocated first:");
             UIUtils.printSectionLine();
+            System.out.println("Guest Name : " + guest.getName());
+            System.out.println("Tier       : " + guest.getLoyaltyTier());
+            System.out.println("Room       : " + room.getRoomNumber()
+                    + " (" + room.getRoomType() + ")");
+            UIUtils.printSectionLine();
+            System.out.println("One VIP booking assigned successfully.");
+            System.out.println("Press Auto Assign again to allocate the next guest.");
+            return;
         }
 
+        // A Pending VIP exists but cannot currently be allocated.
+        // Do not skip it and allocate a Standard booking in the same click.
+        if (result.isVIPBlocked()) {
+            UIUtils.printError(result.getMessage());
+            System.out.println("Standard booking was not allocated because VIP bookings have priority.");
+            return;
+        }
+
+        // No Pending VIP remains, so this click may allocate ONE Standard booking.
         if (result.isSuccess()) {
             printBookingDetail(result.getBooking());
             System.out.println("Booking assigned successfully.");
 
         } else if (result.isManualNeeded()) {
-            // No matching room type — show all available rooms for manual pick.
             System.out.println();
             UIUtils.printError(result.getMessage());
             System.out.println();
@@ -290,7 +310,7 @@ public class BookingUI {
             }
 
         } else if (result.isEmptyQueue()) {
-            System.out.println("No pending standard booking found.");
+            System.out.println("No pending VIP or standard booking found.");
 
         } else if (result.isNoRooms()) {
             UIUtils.printError(result.getMessage());

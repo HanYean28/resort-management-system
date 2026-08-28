@@ -20,10 +20,11 @@ import java.util.Scanner;
  *
  * Menu:
  *   1. Add VIP Guest
- *   2. Create Booking
- *   3. Cancel Booking
- *   4. View Priority Queue
- *   5. Generate Report
+ *   2. Remove VIP Guest
+ *   3. Create Booking
+ *   4. Cancel Booking
+ *   5. View Priority Queue
+ *   6. Generate Report
  *   0. Back
  *
  * NOTE: Allocate Room, Check In, and Check Out have been removed.
@@ -69,13 +70,14 @@ public class VIPRoomAllocationUI {
             UIUtils.clearScreen();
             UIUtils.printHeader("VIP & LOYALTY TIER PRIORITY ROOM ALLOCATION");
             System.out.println(" [1] Add VIP Guest");
-            System.out.println(" [2] Create Booking");
-            System.out.println(" [3] Cancel Booking");
-            System.out.println(" [4] View Priority Queue");
-            System.out.println(" [5] Generate Report");
+            System.out.println(" [2] Remove VIP Guest");
+            System.out.println(" [3] Create Booking");
+            System.out.println(" [4] Cancel Booking");
+            System.out.println(" [5] View Priority Queue");
+            System.out.println(" [6] Generate Report");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-5): ");
+            System.out.print("Please enter choice (0-6): ");
 
             if (scanner.hasNextInt()) {
                 choice = scanner.nextInt();
@@ -88,11 +90,12 @@ public class VIPRoomAllocationUI {
             }
 
             switch (choice) {
-                case 1: handleAddGuest();      break;
-                case 2: handleCreateBooking(); break;
-                case 3: handleCancelBooking(); break;
-                case 4: handleViewQueue();     break;
-                case 5: handleReport();        break;
+                case 1: handleAddGuest();       break;
+                case 2: handleRemoveGuest();    break;
+                case 3: handleCreateBooking();  break;
+                case 4: handleCancelBooking();  break;
+                case 5: handleViewQueue();      break;
+                case 6: handleReport();         break;
                 case 0:
                     UIUtils.clearScreen();
                     System.out.println("Returning to Main Menu...");
@@ -115,10 +118,46 @@ public class VIPRoomAllocationUI {
         UIUtils.clearScreen();
         UIUtils.printHeader("ADD VIP GUEST");
 
-        System.out.print("Enter Guest Name: ");
-        String name = scanner.nextLine().trim();
-        System.out.print("Enter Phone Number: ");
-        String phone = scanner.nextLine().trim();
+        String name;
+        while (true) {
+            System.out.print("Enter Guest Name (0 to return): ");
+            name = scanner.nextLine().trim();
+
+            if (name.equals("0")) {
+                System.out.println("\nReturning to VIP menu...");
+                return;
+            }
+
+            if (name.isEmpty()) {
+                UIUtils.printError("Guest name cannot be empty.");
+                continue;
+            }
+
+            if (!name.matches("[A-Za-z ]+")) {
+                UIUtils.printError("Guest name must contain alphabetic characters only.");
+                continue;
+            }
+
+            break;
+        }
+
+        String phone;
+        while (true) {
+            System.out.print("Enter Phone Number (0 to return): ");
+            phone = scanner.nextLine().trim();
+
+            if (phone.equals("0")) {
+                System.out.println("\nReturning to VIP menu...");
+                return;
+            }
+
+            if (!phone.matches("\\d{10}")) {
+                UIUtils.printError("Phone number must contain exactly 10 digits.");
+                continue;
+            }
+
+            break;
+        }
 
         System.out.println("\nSelect Loyalty Tier:");
         System.out.println(" [1] Diamond");
@@ -126,9 +165,28 @@ public class VIPRoomAllocationUI {
         System.out.println(" [3] Platinum");
         System.out.println(" [4] Gold");
         System.out.println(" [5] Silver");
+        System.out.println(" [0] Return");
         UIUtils.printSectionLine();
+
         String tier = promptTier();
         if (tier == null) {
+            System.out.println("\nGuest registration cancelled.");
+            return;
+        }
+
+        System.out.println();
+        UIUtils.printSectionLine();
+        System.out.println("Guest Details");
+        UIUtils.printSectionLine();
+        System.out.println("Name         : " + name);
+        System.out.println("Phone        : " + phone);
+        System.out.println("Loyalty Tier : " + tier);
+        UIUtils.printSectionLine();
+
+        System.out.print("Confirm add guest? (yes/no): ");
+        String confirm = scanner.nextLine().trim();
+
+        if (!confirm.equalsIgnoreCase("yes") && !confirm.equalsIgnoreCase("y")) {
             System.out.println("\nGuest registration cancelled.");
             return;
         }
@@ -151,7 +209,64 @@ public class VIPRoomAllocationUI {
     }
 
     // -------------------------------------------------------
-    // 2. CREATE BOOKING
+    // 2. REMOVE VIP GUEST
+    // -------------------------------------------------------
+
+    private void handleRemoveGuest() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REMOVE VIP GUEST");
+
+        Guest[] guests = ctrl.getAllWaitingGuests();
+
+        if (guests == null || guests.length == 0) {
+            System.out.println("No VIP guests available to remove.");
+            return;
+        }
+
+        printVipGuestDetailsTable(guests);
+
+        System.out.print("Enter Guest Confirmation No to remove (0 to return): ");
+        String confirmationNo = scanner.nextLine().trim();
+
+        if (confirmationNo.equals("0")) {
+            System.out.println("\nReturning to VIP menu...");
+            return;
+        }
+
+        Guest guest = ctrl.findGuestInQueue(confirmationNo);
+
+        if (guest == null) {
+            UIUtils.printError("VIP guest not found.");
+            return;
+        }
+
+        System.out.println();
+        UIUtils.printSectionLine();
+        System.out.println("Confirmation No : " + guest.getConfirmationNo());
+        System.out.println("Name            : " + guest.getName());
+        System.out.println("Phone           : " + guest.getPhone());
+        System.out.println("Loyalty Tier    : " + guest.getLoyaltyTier());
+        UIUtils.printSectionLine();
+
+        System.out.print("Confirm removal? (yes/no): ");
+        String confirm = scanner.nextLine().trim();
+
+        if (!confirm.equalsIgnoreCase("yes") && !confirm.equalsIgnoreCase("y")) {
+            System.out.println("\nGuest removal cancelled.");
+            return;
+        }
+
+        boolean removed = ctrl.removeGuestFromQueue(confirmationNo);
+
+        if (removed) {
+            System.out.println("\nVIP guest removed successfully.");
+        } else {
+            UIUtils.printError("Failed to remove VIP guest.");
+        }
+    }
+
+    // -------------------------------------------------------
+    // 3. CREATE BOOKING
     // -------------------------------------------------------
 
     private void handleCreateBooking() {
@@ -165,8 +280,13 @@ public class VIPRoomAllocationUI {
 
         printGuestTable(ctrl.getAllWaitingGuests());
 
-        System.out.print("Enter Guest Confirmation No: ");
+        System.out.print("Enter Guest Confirmation No (0 to return): ");
         String confirmationNo = scanner.nextLine().trim();
+
+        if (confirmationNo.equals("0")) {
+            System.out.println("\nReturning to VIP menu...");
+            return;
+        }
 
         Guest g = ctrl.findGuestInQueue(confirmationNo);
         if (g == null) {
@@ -211,33 +331,43 @@ public class VIPRoomAllocationUI {
             return;
         }
 
-        // addGuest(Guest, roomType, checkIn, checkOut) stores the preference maps
-        // for this guest so allocateNextRoom() can find them later.
-        ctrl.addGuest(g, roomType, checkIn, checkOut);
-        System.out.println("\nBooking created successfully. Status: Pending.");
-        System.out.println("Rooms Available : " + ctrl.getAvailableRoomCount());
+        // Create an actual Pending VIP booking in bookings.txt.
+        // The guest is already in the VIP queue, so do NOT add the guest again.
+        String error = ctrl.createPendingVipBooking(g, roomType, checkIn, checkOut);
+
+        if (error == null) {
+            System.out.println("\nBooking created successfully. Status: Pending.");
+            System.out.println("Rooms Available : " + ctrl.getAvailableRoomCount());
+        } else {
+            UIUtils.printError(error);
+        }
     }
 
     // -------------------------------------------------------
-    // 3. CANCEL BOOKING
+    // 4. CANCEL BOOKING
     // -------------------------------------------------------
 
     private void handleCancelBooking() {
         UIUtils.clearScreen();
         UIUtils.printHeader("CANCEL VIP BOOKING");
 
-        // Read cancellable (Pending or Assigned) VIP bookings directly from bookings.txt.
-        List<String[]> cancellable = readVipBookingsByStatus(STATUS_PENDING, STATUS_ASSIGNED);
+        // Only Pending VIP bookings can be cancelled.
+        List<String[]> cancellable = readVipBookingsByStatus(STATUS_PENDING);
 
         if (cancellable.isEmpty()) {
-            System.out.println("No cancellable VIP bookings (Pending or Assigned).");
+            System.out.println("No pending VIP bookings available for cancellation.");
             return;
         }
 
         displayBookingTable(cancellable);
 
-        System.out.print("Enter Booking ID to cancel: ");
+        System.out.print("Enter Booking ID to cancel (0 to return): ");
         String bookingId = scanner.nextLine().trim();
+
+        if (bookingId.equals("0")) {
+            System.out.println("\nReturning to VIP menu...");
+            return;
+        }
 
         String[] target = null;
         for (String[] row : cancellable) {
@@ -245,7 +375,7 @@ public class VIPRoomAllocationUI {
         }
 
         if (target == null) {
-            UIUtils.printError("Booking ID not found in cancellable list.");
+            UIUtils.printError("Booking ID not found or booking is no longer Pending.");
             return;
         }
 
@@ -270,23 +400,52 @@ public class VIPRoomAllocationUI {
     }
 
     // -------------------------------------------------------
-    // 4. VIEW PRIORITY QUEUE
+    // 5. VIEW PRIORITY QUEUE
     // -------------------------------------------------------
 
     private void handleViewQueue() {
         UIUtils.clearScreen();
         UIUtils.printHeader("VIP BOOKING PRIORITY QUEUE");
 
-        Guest[] waiting = ctrl.getAllWaitingGuests();
-        if (waiting == null || waiting.length == 0) {
-            System.out.println("No VIP guests in the priority queue.");
+        // Only actual Pending VIP bookings belong in this queue view.
+        List<String[]> pendingBookings = readVipBookingsByStatus(STATUS_PENDING);
+
+        if (pendingBookings.isEmpty()) {
+            System.out.println("No pending VIP bookings in the priority queue.");
             return;
         }
 
-        // Load all VIP bookings from file to cross-reference status.
-        List<String[]> allVipBookings = readAllVipBookings();
+        /*
+         * Priority rule:
+         * 1. Higher loyalty tier first: Diamond -> Elite -> Platinum -> Gold -> Silver
+         * 2. Within the same tier, earlier check-in date first
+         * 3. If check-in dates are the same, earlier creation time first
+         */
+        pendingBookings.sort((a, b) -> {
+            int tierCompare = Integer.compare(
+                    tierRank(getTierForConf(a[1])),
+                    tierRank(getTierForConf(b[1])));
 
-        System.out.println("Guests are listed in heap priority order (highest tier first).");
+            if (tierCompare != 0) {
+                return tierCompare;
+            }
+
+            try {
+                LocalDate dateA = LocalDate.parse(a[4]);
+                LocalDate dateB = LocalDate.parse(b[4]);
+                int dateCompare = dateA.compareTo(dateB);
+
+                if (dateCompare != 0) {
+                    return dateCompare;
+                }
+            } catch (Exception ignored) {
+                // Fall through to creation time if a stored date is invalid.
+            }
+
+            return a[8].compareToIgnoreCase(b[8]);
+        });
+
+        System.out.println("Bookings are sorted by loyalty tier, then earliest check-in date.");
         System.out.println();
         System.out.printf("%-7s | %-12s | %-20s | %-10s | %-10s | %-10s | %-11s | %s%n",
                 "Booking", "Conf#", "Guest Name", "Tier",
@@ -294,56 +453,49 @@ public class VIPRoomAllocationUI {
         UIUtils.printSectionLine();
 
         int count = 0;
-        for (Guest g : waiting) {
-            if (g == null) continue;
-            count++;
+        Guest nextGuest = null;
+        String nextBookingId = null;
 
-            // Find the most recent booking for this guest from file.
-            String bookingId = "—";
-            String roomType  = ctrl.getRequestedRoomType(g.getConfirmationNo());
-            String checkIn   = "—";
-            String checkOut  = "—";
-            String status    = "No booking";
+        for (String[] booking : pendingBookings) {
+            Guest guest = ctrl.findGuestInQueue(booking[1]);
 
-            for (String[] row : allVipBookings) {
-                if (row[1].equalsIgnoreCase(g.getConfirmationNo())) {
-                    bookingId = row[0];
-                    if (roomType == null) roomType = row[3];
-                    checkIn  = row[4];
-                    checkOut = row[5];
-                    status   = row[6];
-                    // Last match wins — most recent booking.
-                }
+            // Skip invalid/orphaned booking records that no longer have a VIP guest.
+            if (guest == null) {
+                continue;
             }
 
-            if (roomType == null) roomType = "—";
-            String name = g.getName();
-            if (name.length() > 20) name = name.substring(0, 17) + "...";
+            String name = guest.getName();
+            if (name.length() > 20) {
+                name = name.substring(0, 17) + "...";
+            }
 
             System.out.printf("%-7s | %-12s | %-20s | %-10s | %-10s | %-10s | %-11s | %s%n",
-                    bookingId,
-                    g.getConfirmationNo(),
-                    name,
-                    g.getLoyaltyTier(),
-                    roomType,
-                    checkIn,
-                    checkOut,
-                    status);
+                    booking[0], booking[1], name, guest.getLoyaltyTier(),
+                    booking[3], booking[4], booking[5], booking[6]);
+
+            count++;
+
+            // First displayed booking is the highest-priority booking.
+            if (nextGuest == null) {
+                nextGuest = guest;
+                nextBookingId = booking[0];
+            }
         }
 
         UIUtils.printSectionLine();
-        System.out.println("Total Guests in Queue: " + count);
+        System.out.println("Total Pending VIP Bookings: " + count);
 
-        Guest next = ctrl.peekNextGuest();
-        if (next != null) {
-            System.out.println("Next to Allocate     : " + next.getName()
-                    + " [" + next.getLoyaltyTier() + "]"
-                    + " (Conf# " + next.getConfirmationNo() + ")");
+        if (nextGuest != null) {
+            System.out.println("Next to Allocate          : "
+                    + nextGuest.getName()
+                    + " [" + nextGuest.getLoyaltyTier() + "]"
+                    + " (Booking " + nextBookingId
+                    + ", Conf# " + nextGuest.getConfirmationNo() + ")");
         }
     }
 
     // -------------------------------------------------------
-    // 5. GENERATE REPORT
+    // 6. GENERATE REPORT
     // -------------------------------------------------------
 
     private void handleReport() {
@@ -576,6 +728,32 @@ public class VIPRoomAllocationUI {
                     g.getConfirmationNo(), g.getName(), g.getLoyaltyTier());
         }
         UIUtils.printSectionLine();
+    }
+
+    /** Prints full VIP guest details (used in Remove VIP Guest). */
+    private void printVipGuestDetailsTable(Guest[] guests) {
+        if (guests == null || guests.length == 0) {
+            System.out.println("No VIP guests found.");
+            return;
+        }
+
+        System.out.printf("%-14s | %-20s | %-15s | %-10s%n",
+                "Confirmation", "Name", "Phone", "Tier");
+        UIUtils.printSectionLine();
+
+        int count = 0;
+        for (Guest g : guests) {
+            if (g == null) continue;
+            count++;
+            System.out.printf("%-14s | %-20s | %-15s | %-10s%n",
+                    g.getConfirmationNo(),
+                    g.getName(),
+                    g.getPhone(),
+                    g.getLoyaltyTier());
+        }
+
+        UIUtils.printSectionLine();
+        System.out.println("Total VIP Guests: " + count);
     }
 
     /** Displays a table of raw booking rows (String[9]) for cancel/view. */

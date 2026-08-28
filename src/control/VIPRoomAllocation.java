@@ -205,8 +205,6 @@ public class VIPRoomAllocation {
                 allRooms.add(room);
             }
 
-            System.out.println("[VIP] Rooms loaded from " + ROOMS_FILE);
-
         } catch (IOException e) {
             System.out.println("[VIP] Could not read " + ROOMS_FILE + ": " + e.getMessage());
         }
@@ -282,30 +280,76 @@ public class VIPRoomAllocation {
      */
     private void saveBookingToFile(Guest guest, Room room) {
 
-        String bookingId   = generateNextBookingId();
-        String createdAt   = LocalDateTime.now().format(TIMESTAMP_FORMAT);
-        String checkIn     = checkInDates.getOrDefault(guest.getConfirmationNo(), "N/A");
-        String checkOut    = checkOutDates.getOrDefault(guest.getConfirmationNo(), "N/A");
+        String bookingId = null;
+        String checkIn = checkInDates.getOrDefault(guest.getConfirmationNo(), "N/A");
+        String checkOut = checkOutDates.getOrDefault(guest.getConfirmationNo(), "N/A");
+        List<String> lines = new ArrayList<>();
+        boolean updated = false;
 
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
+        // A VIP booking is created as Pending first. Allocation must update that
+        // same booking to Assigned instead of creating a second booking record.
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
 
-            bw.write(bookingId                  + "|"
-                    + guest.getConfirmationNo()  + "|"
-                    + "VIP"                      + "|"
-                    + room.getRoomType()          + "|"
-                    + checkIn                     + "|"
-                    + checkOut                    + "|"
-                    + "Assigned"                  + "|"
-                    + room.getRoomNumber()         + "|"
-                    + createdAt);
-            bw.newLine();
+                if (!updated && !trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                    String[] parts = trimmed.split("\\|", -1);
 
-        } catch (IOException e) {
-            System.out.println("[VIP] Could not append to " + BOOKINGS_FILE
-                    + ": " + e.getMessage());
+                    if (parts.length >= 9
+                            && parts[1].trim().equalsIgnoreCase(guest.getConfirmationNo())
+                            && parts[2].trim().equalsIgnoreCase("VIP")
+                            && parts[6].trim().equalsIgnoreCase("Pending")) {
+
+                        bookingId = parts[0].trim();
+                        parts[6] = "Assigned";
+                        parts[7] = room.getRoomNumber();
+                        line = String.join("|", parts);
+                        updated = true;
+                    }
+                }
+
+                lines.add(line);
+            }
+        } catch (IOException ignored) {
+            // Fall back to creating an Assigned record below for old data/workflows.
         }
 
-        // Generate billing record immediately after booking.
+        if (updated) {
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE))) {
+                for (String line : lines) {
+                    bw.write(line);
+                    bw.newLine();
+                }
+            } catch (IOException e) {
+                System.out.println("[VIP] Could not update " + BOOKINGS_FILE
+                        + ": " + e.getMessage());
+                return;
+            }
+        } else {
+            // Backward-compatible fallback if no Pending record exists.
+            bookingId = generateNextBookingId();
+            String createdAt = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
+                bw.write(bookingId + "|"
+                        + guest.getConfirmationNo() + "|"
+                        + "VIP|"
+                        + room.getRoomType() + "|"
+                        + checkIn + "|"
+                        + checkOut + "|"
+                        + "Assigned|"
+                        + room.getRoomNumber() + "|"
+                        + createdAt);
+                bw.newLine();
+            } catch (IOException e) {
+                System.out.println("[VIP] Could not append to " + BOOKINGS_FILE
+                        + ": " + e.getMessage());
+                return;
+            }
+        }
+
+        // Generate billing only after the room has actually been assigned.
         saveBillingToFile(guest, room, bookingId, checkIn, checkOut);
     }
 
@@ -452,32 +496,81 @@ public class VIPRoomAllocation {
     }
 
     /**
-     * Adds a VIP guest with their requested room type and stay dates.
-     * All preferences are stored in maps keyed by confirmation number
-     * and used during allocation and billing.
+     * Creates a Pending VIP booking for an existing VIP guest.
+     *
+     * The guest is NOT added to vipQueue again because the guest is already
+     * registered in the queue by addGuest(Guest). This method only stores the
+     * booking preferences and appends the Pending booking to bookings.txt.
+     *
+     * @return null when successful, otherwise an error message
      */
-    public void addGuest(Guest guest, String requestedRoomType,
+    public String createPendingVipBooking(Guest guest, String requestedRoomType,
             String checkInDate, String checkOutDate) {
 
         if (guest == null) {
-            throw new IllegalArgumentException("Guest cannot be null.");
+            return "Guest cannot be null.";
         }
 
-        vipQueue.add(guest);
-
-        if (requestedRoomType != null && !requestedRoomType.trim().isEmpty()) {
-            requestedRoomTypes.put(guest.getConfirmationNo(), requestedRoomType.trim());
+        if (requestedRoomType == null || requestedRoomType.trim().isEmpty()
+                || checkInDate == null || checkInDate.trim().isEmpty()
+                || checkOutDate == null || checkOutDate.trim().isEmpty()) {
+            return "Booking details cannot be empty.";
         }
 
-        if (checkInDate != null && !checkInDate.trim().isEmpty()) {
-            checkInDates.put(guest.getConfirmationNo(), checkInDate.trim());
+        // The current VIP design stores one set of booking preferences per guest,
+        // so prevent another active Pending/Assigned booking for the same guest.
+        if (hasActiveVipBooking(guest.getConfirmationNo())) {
+            return "Guest already has an active VIP booking.";
         }
 
-        if (checkOutDate != null && !checkOutDate.trim().isEmpty()) {
-            checkOutDates.put(guest.getConfirmationNo(), checkOutDate.trim());
+        requestedRoomTypes.put(guest.getConfirmationNo(), requestedRoomType.trim());
+        checkInDates.put(guest.getConfirmationNo(), checkInDate.trim());
+        checkOutDates.put(guest.getConfirmationNo(), checkOutDate.trim());
+
+        String bookingId = generateNextBookingId();
+        String createdAt = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
+            bw.write(bookingId + "|"
+                    + guest.getConfirmationNo() + "|"
+                    + "VIP|"
+                    + requestedRoomType.trim() + "|"
+                    + checkInDate.trim() + "|"
+                    + checkOutDate.trim() + "|"
+                    + "Pending|"
+                    + "N/A|"
+                    + createdAt);
+            bw.newLine();
+        } catch (IOException e) {
+            return "Could not save VIP booking: " + e.getMessage();
         }
 
-        saveGuestsToFile();
+        return null;
+    }
+
+    /** Returns true if the guest already has a Pending or Assigned VIP booking. */
+    private boolean hasActiveVipBooking(String confirmationNo) {
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length < 9) continue;
+
+                boolean sameGuest = parts[1].trim().equalsIgnoreCase(confirmationNo);
+                boolean vip = parts[2].trim().equalsIgnoreCase("VIP");
+                String status = parts[6].trim();
+                boolean active = status.equalsIgnoreCase("Pending")
+                        || status.equalsIgnoreCase("Assigned");
+
+                if (sameGuest && vip && active) return true;
+            }
+        } catch (IOException ignored) {
+            // If the file does not exist yet, there is no active booking to block.
+        }
+        return false;
     }
 
     /**
@@ -646,58 +739,235 @@ public class VIPRoomAllocation {
      *   3. If no match, return a failure so the UI can prompt manual selection.
      *   4. If no preference, take the first available room.
      */
-    public AllocationResult allocateNextRoom() {
+    /**
+     * Allocates the next Pending VIP booking according to VIP priority.
+     *
+     * Priority order:
+     *   1. Loyalty tier: Diamond, Elite, Platinum, Gold, Silver
+     *   2. For guests in the same tier, keep their existing booking/queue order
+     *
+     * This method owns all VIP-specific decision logic so other controllers
+     * only need to call this method.
+     */
+    /**
+     * Returns true when at least one guest in the VIP priority queue has a
+     * Pending VIP booking. BookingController uses this only to decide whether
+     * the next allocation click must be handled by the VIP module first.
+     */
+    public boolean hasPendingVipBooking() {
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length < 9) {
+                    continue;
+                }
+
+                if (parts[2].trim().equalsIgnoreCase("VIP")
+                        && parts[6].trim().equalsIgnoreCase("Pending")
+                        && vipQueue.find(parts[1].trim()) != null) {
+                    return true;
+                }
+            }
+        } catch (IOException ignored) {
+        }
+        return false;
+    }
+
+    public AllocationResult allocateNextPendingBooking() {
 
         if (vipQueue.isEmpty()) {
-            return AllocationResult.failure("No VIP guests are currently waiting.");
+            return AllocationResult.failure("VIP queue is empty.");
         }
 
-        List<Room> available = getAvailableRooms();
+        // Always reload the shared room file before allocating so this controller
+        // sees room changes made by other modules.
+        loadRoomsFromFile();
 
+        Guest selectedGuest = null;
+        String[] selectedBooking = null;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length < 9) {
+                    continue;
+                }
+
+                // Only Pending VIP bookings are eligible for VIP allocation.
+                if (!parts[2].trim().equalsIgnoreCase("VIP")
+                        || !parts[6].trim().equalsIgnoreCase("Pending")) {
+                    continue;
+                }
+
+                Guest guest = vipQueue.find(parts[1].trim());
+                if (guest == null) {
+                    continue;
+                }
+
+                if (selectedGuest == null
+                        || isHigherVipBookingPriority(guest, selectedGuest)) {
+                    selectedGuest = guest;
+                    selectedBooking = parts;
+                }
+            }
+
+        } catch (IOException e) {
+            return AllocationResult.failure(
+                    "Could not read VIP bookings: " + e.getMessage());
+        }
+
+        if (selectedGuest == null || selectedBooking == null) {
+            return AllocationResult.failure("No pending VIP booking found.");
+        }
+
+        String requestedType = selectedBooking[3].trim();
+        String checkIn = selectedBooking[4].trim();
+        String checkOut = selectedBooking[5].trim();
+
+        // Restore the selected booking preferences into the VIP controller maps.
+        // This is important when BookingController creates a fresh VIP controller
+        // after the program has been restarted.
+        requestedRoomTypes.put(selectedGuest.getConfirmationNo(), requestedType);
+        checkInDates.put(selectedGuest.getConfirmationNo(), checkIn);
+        checkOutDates.put(selectedGuest.getConfirmationNo(), checkOut);
+
+        List<Room> available = getAvailableRooms();
         if (available.isEmpty()) {
             return AllocationResult.failure("No rooms are currently available.");
         }
 
-        Guest guest = vipQueue.peek();
-        String requestedType = requestedRoomTypes.get(guest.getConfirmationNo());
-
         Room matched = null;
-
-        if (requestedType != null) {
-            // Try to find a room matching the requested type.
-            for (Room r : available) {
-                if (r.getRoomType().equalsIgnoreCase(requestedType)) {
-                    matched = r;
-                    break;
-                }
+        for (Room room : available) {
+            if (room.getRoomType().equalsIgnoreCase(requestedType)
+                    && !hasRoomDateClash(room.getRoomNumber(), selectedBooking)) {
+                matched = room;
+                break;
             }
-
-            // No room of requested type available — signal manual selection needed.
-            if (matched == null) {
-                return AllocationResult.failure(
-                        "No available room of type '" + requestedType
-                        + "' for " + guest.getName() + ". Please select manually.");
-            }
-        } else {
-            // No preference — take first available.
-            matched = available.get(0);
         }
 
-        // Remove guest from queue.
-        vipQueue.remove();
+        if (matched == null) {
+            return AllocationResult.failure(
+                    "No available room of type '" + requestedType
+                    + "' for " + selectedGuest.getName() + ".");
+        }
 
-        // Room stays Vacant — becomes Occupied only when guest checks in.
+        // Remove only the selected Pending VIP guest from the priority queue.
+        vipQueue.removeByConfirmationNo(selectedGuest.getConfirmationNo());
+
+        // Room stays Vacant until check-in. The booking itself reserves the room
+        // for its date range, and hasRoomDateClash prevents double-booking.
         matched.setLastUpdate(LocalDateTime.now().format(TIMESTAMP_FORMAT));
 
-        // Persist.
         saveRoomsToFile();
         saveGuestsToFile();
-        saveBookingToFile(guest, matched);
+        saveBookingToFile(selectedGuest, matched);
 
-        String entry = buildLogEntry(guest, matched);
+        String entry = buildLogEntry(selectedGuest, matched);
         allocationLog.add(entry);
 
-        return AllocationResult.success(guest, matched, entry);
+        return AllocationResult.success(selectedGuest, matched, entry);
+    }
+
+    /**
+     * Backward-compatible entry point used by existing VIP UI code.
+     * Allocation is now restricted to guests with a Pending VIP booking.
+     */
+    public AllocationResult allocateNextRoom() {
+        return allocateNextPendingBooking();
+    }
+
+    /**
+     * Returns true only when the candidate has a higher loyalty tier.
+     * Guests in the same tier keep their existing booking/queue order.
+     */
+    private boolean isHigherVipBookingPriority(Guest candidate, Guest current) {
+
+        int candidateTier = getTierPriority(candidate.getLoyaltyTier());
+        int currentTier = getTierPriority(current.getLoyaltyTier());
+
+        return candidateTier < currentTier;
+    }
+
+    private int getTierPriority(String tier) {
+        if (tier == null) return 99;
+
+        switch (tier.trim().toUpperCase()) {
+            case "DIAMOND":  return 1;
+            case "ELITE":    return 2;
+            case "PLATINUM": return 3;
+            case "GOLD":     return 4;
+            case "SILVER":   return 5;
+            default:         return 99;
+        }
+    }
+
+    /** Parses a booking date for room-overlap checking only. */
+    private LocalDate parseBookingDate(String value) {
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (Exception e) {
+            return LocalDate.MAX;
+        }
+    }
+
+    /**
+     * Checks whether a room is already reserved for an overlapping Assigned or
+     * Checked-In booking. Pending bookings do not reserve a room yet.
+     */
+    private boolean hasRoomDateClash(String roomNumber, String[] targetBooking) {
+        LocalDate targetIn = parseBookingDate(targetBooking[4]);
+        LocalDate targetOut = parseBookingDate(targetBooking[5]);
+
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length < 9) {
+                    continue;
+                }
+
+                String status = parts[6].trim();
+                boolean reservesRoom = status.equalsIgnoreCase("Assigned")
+                        || status.equalsIgnoreCase("Checked In");
+
+                if (!reservesRoom
+                        || !parts[7].trim().equalsIgnoreCase(roomNumber)
+                        || parts[0].trim().equalsIgnoreCase(targetBooking[0].trim())) {
+                    continue;
+                }
+
+                LocalDate existingIn = parseBookingDate(parts[4]);
+                LocalDate existingOut = parseBookingDate(parts[5]);
+
+                if (targetIn.isBefore(existingOut) && targetOut.isAfter(existingIn)) {
+                    return true;
+                }
+            }
+        } catch (IOException ignored) {
+            // If the file cannot be read here, normal allocation error handling
+            // will still occur when the booking is persisted.
+        }
+
+        return false;
     }
 
     /**
@@ -709,7 +979,11 @@ public class VIPRoomAllocation {
         List<AllocationResult> results = new ArrayList<>();
 
         while (!vipQueue.isEmpty() && !getAvailableRooms().isEmpty()) {
-            results.add(allocateNextRoom());
+            AllocationResult result = allocateNextPendingBooking();
+            results.add(result);
+            if (!result.isSuccess()) {
+                break;
+            }
         }
 
         // Report remaining guests who could not be allocated.

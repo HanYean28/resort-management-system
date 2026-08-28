@@ -186,16 +186,33 @@ public class BookingController {
 
     public AssignResult autoAssignNextStandardBooking() {
 
-        // VIP allocation is handled exclusively by the VIP module.
-        // Standard booking auto-assign must NOT trigger VIP allocation
-        // as a side effect — they are independent workflows.
-        VIPRoomAllocation.AllocationResult vipResult =
-                VIPRoomAllocation.AllocationResult.failure(
-                        "VIP allocation runs independently.");
+        /*
+         * ONE allocation per click.
+         * If any Pending VIP booking exists, the VIP module gets this click.
+         * BookingController does not inspect tiers or choose the VIP guest;
+         * VIPRoomAllocation owns that priority logic.
+         */
+        if (vipAllocation.hasPendingVipBooking()) {
+            VIPRoomAllocation.AllocationResult vipResult =
+                    vipAllocation.allocateNextPendingBooking();
 
+            if (vipResult != null && vipResult.isSuccess()) {
+                // VIPRoomAllocation updated the shared bookings.txt file.
+                loadBookingsFromFile();
+                rebuildPendingQueue();
+                return AssignResult.vipAllocated(vipResult);
+            }
+
+            String message = vipResult == null
+                    ? "VIP allocation could not be completed."
+                    : vipResult.getMessage();
+            return AssignResult.vipBlocked(message);
+        }
+
+        // No Pending VIP booking remains, so allocate ONE Standard booking.
         BookingRequest nextBooking = pendingQueue.getFront();
         if (nextBooking == null) {
-            return AssignResult.emptyQueue(vipResult);
+            return AssignResult.emptyQueue();
         }
 
         String roomNumber = findAvailableRoom(nextBooking);
@@ -204,17 +221,18 @@ public class BookingController {
             nextBooking.setAssignedRoomNumber(roomNumber);
             nextBooking.setStatus(STATUS_ASSIGNED);
             pendingQueue.dequeue();
+
             // Room stays Vacant — becomes Occupied only when guest checks in.
             saveBookingsToFile();
-            return AssignResult.success(nextBooking, vipResult);
+            return AssignResult.success(nextBooking);
         }
 
         ListInterface<Room> allAvailable = getAllAvailableRooms();
         if (allAvailable.getNumberOfEntries() == 0) {
-            return AssignResult.noRooms(nextBooking, vipResult);
+            return AssignResult.noRooms(nextBooking);
         }
 
-        return AssignResult.manualNeeded(nextBooking, allAvailable, vipResult,
+        return AssignResult.manualNeeded(nextBooking, allAvailable,
                 "No '" + nextBooking.getRequestedRoomType()
                 + "' room available. Please select from the rooms below:");
     }
@@ -412,51 +430,12 @@ public class BookingController {
     }
 
     // ═══════════════════════════════════════════════════════
-    // VIP integration — FIXED
+    // VIP integration
     // ═══════════════════════════════════════════════════════
 
-    /**
-     * Runs VIP allocation only if there is a guest in the VIP queue
-     * who has a booking with status exactly "Pending" in bookings.txt.
-     *
-     * FIX: The old version called vipAllocation.findNextPendingGuest()
-     * which checks the VIP module's internal booking list. That list
-     * can be out of sync with BookingController's bookings list, causing
-     * already-assigned VIP guests to be re-allocated and stealing rooms
-     * from standard bookings.
-     *
-     * The fix cross-checks THIS controller's in-memory bookings list —
-     * the single source of truth — to confirm a VIP booking is truly
-     * Pending before triggering allocation.
-     */
-    private VIPRoomAllocation.AllocationResult runVIPAllocationIfPending() {
-
-        if (vipAllocation.isQueueEmpty()) {
-            return VIPRoomAllocation.AllocationResult.failure("VIP queue is empty.");
-        }
-
-        // Cross-check: scan THIS controller's bookings for a truly Pending VIP booking
-        // whose guest is still in the VIP priority queue.
-        boolean hasTrulyPendingVIP = false;
-
-        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
-            BookingRequest b = bookings.getEntry(i);
-
-            if ("VIP".equals(b.getBookingType())
-                    && STATUS_PENDING.equals(b.getStatus())
-                    && vipAllocation.findGuestInQueue(b.getConfirmationNo()) != null) {
-                hasTrulyPendingVIP = true;
-                break;
-            }
-        }
-
-        if (!hasTrulyPendingVIP) {
-            return VIPRoomAllocation.AllocationResult.failure(
-                    "No VIP guest with a Pending booking.");
-        }
-
-        return vipAllocation.allocateNextRoom();
-    }
+    // VIP-specific rules are intentionally kept in VIPRoomAllocation.
+    // BookingController only calls vipAllocation.allocateNextPendingBooking()
+    // from autoAssignNextStandardBooking().
 
     // ═══════════════════════════════════════════════════════
     // Walk-in completion helper
@@ -907,47 +886,66 @@ public class BookingController {
     }
 
     public static class AssignResult {
-        public enum Kind { SUCCESS, MANUAL_NEEDED, EMPTY_QUEUE, NO_ROOMS }
+        public enum Kind {
+            SUCCESS, MANUAL_NEEDED, EMPTY_QUEUE, NO_ROOMS,
+            VIP_ALLOCATED, VIP_BLOCKED
+        }
 
-        private final Kind                              kind;
-        private final BookingRequest                    booking;
-        private final ListInterface<Room>               availableRooms;
-        private final String                            message;
+        private final Kind kind;
+        private final BookingRequest booking;
+        private final ListInterface<Room> availableRooms;
+        private final String message;
         private final VIPRoomAllocation.AllocationResult vipResult;
 
         private AssignResult(Kind k, BookingRequest b, ListInterface<Room> rooms,
-                String msg, VIPRoomAllocation.AllocationResult vip) {
-            kind = k; booking = b; availableRooms = rooms; message = msg; vipResult = vip;
+                String msg, VIPRoomAllocation.AllocationResult vipResult) {
+            kind = k;
+            booking = b;
+            availableRooms = rooms;
+            message = msg;
+            this.vipResult = vipResult;
         }
 
-        public static AssignResult success(BookingRequest b,
-                VIPRoomAllocation.AllocationResult vip) {
-            return new AssignResult(Kind.SUCCESS, b, null, null, vip);
+        public static AssignResult success(BookingRequest b) {
+            return new AssignResult(Kind.SUCCESS, b, null, null, null);
         }
+
         public static AssignResult manualNeeded(BookingRequest b,
-                ListInterface<Room> rooms, VIPRoomAllocation.AllocationResult vip,
-                String msg) {
-            return new AssignResult(Kind.MANUAL_NEEDED, b, rooms, msg, vip);
+                ListInterface<Room> rooms, String msg) {
+            return new AssignResult(Kind.MANUAL_NEEDED, b, rooms, msg, null);
         }
-        public static AssignResult emptyQueue(VIPRoomAllocation.AllocationResult vip) {
+
+        public static AssignResult emptyQueue() {
             return new AssignResult(Kind.EMPTY_QUEUE, null, null,
-                    "No pending standard bookings in the queue.", vip);
+                    "No pending standard bookings in the queue.", null);
         }
-        public static AssignResult noRooms(BookingRequest b,
-                VIPRoomAllocation.AllocationResult vip) {
+
+        public static AssignResult noRooms(BookingRequest b) {
             return new AssignResult(Kind.NO_ROOMS, b, null,
-                    "No rooms are currently available.", vip);
+                    "No rooms are currently available.", null);
         }
 
-        public boolean            isSuccess()       { return kind == Kind.SUCCESS;       }
-        public boolean            isManualNeeded()  { return kind == Kind.MANUAL_NEEDED; }
-        public boolean            isEmptyQueue()    { return kind == Kind.EMPTY_QUEUE;   }
-        public boolean            isNoRooms()       { return kind == Kind.NO_ROOMS;      }
+        public static AssignResult vipAllocated(
+                VIPRoomAllocation.AllocationResult vipResult) {
+            return new AssignResult(Kind.VIP_ALLOCATED, null, null,
+                    null, vipResult);
+        }
 
-        public BookingRequest                     getBooking()        { return booking;        }
-        public ListInterface<Room>                getAvailableRooms() { return availableRooms; }
-        public String                             getMessage()        { return message;        }
-        public VIPRoomAllocation.AllocationResult getVIPResult()      { return vipResult;      }
+        public static AssignResult vipBlocked(String msg) {
+            return new AssignResult(Kind.VIP_BLOCKED, null, null, msg, null);
+        }
+
+        public boolean isSuccess()      { return kind == Kind.SUCCESS; }
+        public boolean isManualNeeded() { return kind == Kind.MANUAL_NEEDED; }
+        public boolean isEmptyQueue()   { return kind == Kind.EMPTY_QUEUE; }
+        public boolean isNoRooms()      { return kind == Kind.NO_ROOMS; }
+        public boolean isVIPAllocated() { return kind == Kind.VIP_ALLOCATED; }
+        public boolean isVIPBlocked()   { return kind == Kind.VIP_BLOCKED; }
+
+        public BookingRequest getBooking() { return booking; }
+        public ListInterface<Room> getAvailableRooms() { return availableRooms; }
+        public String getMessage() { return message; }
+        public VIPRoomAllocation.AllocationResult getVIPResult() { return vipResult; }
     }
 
     public static class RoomTypeDemandRow {
