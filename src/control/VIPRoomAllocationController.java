@@ -10,13 +10,11 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import utility.DateUtils;
 
 /**
  * Controller for Module 2 — VIP & Loyalty Tier Priority Room Allocation.
@@ -26,7 +24,7 @@ import java.util.Map;
  *   rooms.txt    — roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
  *   bookings.txt — bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt
  *
- * @author Lim How Voon
+ * @author Kaizen Soh
  */
 public class VIPRoomAllocationController {
 
@@ -38,9 +36,6 @@ public class VIPRoomAllocationController {
     private static final String ROOMS_FILE    = "rooms.txt";
     private static final String BOOKINGS_FILE = "bookings.txt";
     private static final String BILLING_FILE  = "billing.txt";
-
-    private static final DateTimeFormatter TIMESTAMP_FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     // Nightly rates per loyalty tier.
     private static final Map<String, Double> TIER_RATES = new HashMap<>();
@@ -329,7 +324,7 @@ public class VIPRoomAllocationController {
         } else {
             // Backward-compatible fallback if no Pending record exists.
             bookingId = generateNextBookingId();
-            String createdAt = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+            String createdAt = DateUtils.getCurrentTimestamp();
 
             try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
                 bw.write(bookingId + "|"
@@ -367,14 +362,12 @@ public class VIPRoomAllocationController {
             String bookingId, String checkIn, String checkOut) {
 
         String billId    = generateNextBillId();
-        String createdAt = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+        String createdAt = DateUtils.getCurrentTimestamp();
 
-        long nights = 1; // default if dates are invalid
+        int nights = 1; // default if dates are invalid
 
         try {
-            LocalDate in  = LocalDate.parse(checkIn);
-            LocalDate out = LocalDate.parse(checkOut);
-            long computed = ChronoUnit.DAYS.between(in, out);
+            int computed = DateUtils.countNights(checkIn, checkOut);
             if (computed > 0) nights = computed;
         } catch (Exception ignored) {}
 
@@ -427,7 +420,7 @@ public class VIPRoomAllocationController {
 
                 String[] parts = line.split("\\|");
 
-                if (parts.length > 0 && parts[0].startsWith("BL")) {
+                if (parts.length > 0 && parts[0].matches("BL\\d{4}")) {
                     try {
                         int num = Integer.parseInt(parts[0].substring(2));
                         if (num > max) max = num;
@@ -437,7 +430,13 @@ public class VIPRoomAllocationController {
 
         } catch (IOException ignored) {}
 
-        return String.format("BL%04d", max + 1);
+        int nextNumber = max + 1;
+        String billId = String.format("BL%04d", nextNumber);
+        while (idExistsInFile(BILLING_FILE, billId)) {
+            nextNumber++;
+            billId = String.format("BL%04d", nextNumber);
+        }
+        return billId;
     }
 
     /**
@@ -462,7 +461,7 @@ public class VIPRoomAllocationController {
 
                 String[] parts = line.split("\\|");
 
-                if (parts.length > 0 && parts[0].startsWith("B")) {
+                if (parts.length > 0 && parts[0].matches("B\\d{4}")) {
                     try {
                         int num = Integer.parseInt(parts[0].substring(1));
                         if (num > max) max = num;
@@ -472,7 +471,13 @@ public class VIPRoomAllocationController {
 
         } catch (IOException ignored) {}
 
-        return String.format("B%04d", max + 1);
+        int nextNumber = max + 1;
+        String bookingId = String.format("B%04d", nextNumber);
+        while (idExistsInFile(BOOKINGS_FILE, bookingId)) {
+            nextNumber++;
+            bookingId = String.format("B%04d", nextNumber);
+        }
+        return bookingId;
     }
 
     // -------------------------------------------------------
@@ -528,7 +533,7 @@ public class VIPRoomAllocationController {
         checkOutDates.put(guest.getConfirmationNo(), checkOutDate.trim());
 
         String bookingId = generateNextBookingId();
-        String createdAt = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+        String createdAt = DateUtils.getCurrentTimestamp();
 
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
             bw.write(bookingId + "|"
@@ -627,7 +632,7 @@ public class VIPRoomAllocationController {
 
         // Room stays Vacant — it becomes Occupied only when guest checks in.
         // Just update lastUpdate to record when the assignment happened.
-        target.setLastUpdate(LocalDateTime.now().format(TIMESTAMP_FORMAT));
+        target.setLastUpdate(DateUtils.getCurrentTimestamp());
 
         // Persist.
         saveRoomsToFile();
@@ -869,7 +874,7 @@ public class VIPRoomAllocationController {
 
         // Room stays Vacant until check-in. The booking itself reserves the room
         // for its date range, and hasRoomDateClash prevents double-booking.
-        matched.setLastUpdate(LocalDateTime.now().format(TIMESTAMP_FORMAT));
+        matched.setLastUpdate(DateUtils.getCurrentTimestamp());
 
         saveRoomsToFile();
         saveGuestsToFile();
@@ -917,7 +922,7 @@ public class VIPRoomAllocationController {
     /** Parses a booking date for room-overlap checking only. */
     private LocalDate parseBookingDate(String value) {
         try {
-            return LocalDate.parse(value.trim());
+            return DateUtils.parseDate(value.trim());
         } catch (Exception e) {
             return LocalDate.MAX;
         }
@@ -955,10 +960,8 @@ public class VIPRoomAllocationController {
                     continue;
                 }
 
-                LocalDate existingIn = parseBookingDate(parts[4]);
-                LocalDate existingOut = parseBookingDate(parts[5]);
-
-                if (targetIn.isBefore(existingOut) && targetOut.isAfter(existingIn)) {
+                if (targetIn.isBefore(parseBookingDate(parts[5]))
+                        && targetOut.isAfter(parseBookingDate(parts[4]))) {
                     return true;
                 }
             }
@@ -1173,7 +1176,7 @@ public class VIPRoomAllocationController {
 
                 String[] parts = line.split("\\|");
 
-                if (parts.length >= 1) {
+                if (parts.length >= 1 && parts[0].trim().matches("\\d{8}")) {
                     try {
                         int num = Integer.parseInt(parts[0].trim());
                         if (num > max) {
@@ -1185,7 +1188,37 @@ public class VIPRoomAllocationController {
 
         } catch (IOException ignored) {}
 
-        return String.format("%08d", max + 1);
+        int nextNumber;
+        if (max == 0) {
+            nextNumber = 80000001;
+        } else {
+            nextNumber = max + 1;
+        }
+
+        String confirmationNo = String.format("%08d", nextNumber);
+        while (idExistsInFile(GUESTS_FILE, confirmationNo)) {
+            nextNumber++;
+            confirmationNo = String.format("%08d", nextNumber);
+        }
+        return confirmationNo;
+    }
+
+    private boolean idExistsInFile(String fileName, String id) {
+        try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+                if (parts.length > 0 && parts[0].trim().equalsIgnoreCase(id)) {
+                    return true;
+                }
+            }
+        } catch (IOException ignored) {}
+
+        return false;
     }
 
     /**

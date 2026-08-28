@@ -2,6 +2,7 @@ package boundary;
 
 import control.VIPRoomAllocationController;
 import entity.Guest;
+import utility.DateUtils;
 import utility.UIUtils;
 
 import java.io.BufferedReader;
@@ -10,7 +11,6 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -726,11 +726,9 @@ public class VIPRoomAllocationUI {
      * Mirrors VIPRoomAllocationController.saveBillingToFile logic exactly.
      */
     private double computePreview(String loyaltyTier, String checkIn, String checkOut) {
-        long nights = 1;
+        int nights = 1;
         try {
-            LocalDate in  = LocalDate.parse(checkIn);
-            LocalDate out = LocalDate.parse(checkOut);
-            long computed = ChronoUnit.DAYS.between(in, out);
+            int computed = DateUtils.countNights(checkIn, checkOut);
             if (computed > 0) nights = computed;
         } catch (Exception ignored) {}
         double rate = TIER_RATES.getOrDefault(loyaltyTier.toUpperCase(), 399.00);
@@ -998,7 +996,7 @@ public class VIPRoomAllocationUI {
             String input = scanner.nextLine().trim();
             if (input.equals("0")) return null;
             try {
-                LocalDate.parse(input);
+                DateUtils.parseDate(input);
                 return input;
             } catch (Exception e) {
                 UIUtils.printError("Date format must be YYYY-MM-DD.");
@@ -1010,7 +1008,7 @@ public class VIPRoomAllocationUI {
         while (true) {
             String input = promptDate(prompt);
             if (input == null) return null;
-            if (!LocalDate.parse(input).isBefore(LocalDate.now())) return input;
+            if (!DateUtils.isBeforeToday(input)) return input;
             UIUtils.printError("Check-in date cannot be before today.");
         }
     }
@@ -1019,7 +1017,7 @@ public class VIPRoomAllocationUI {
         while (true) {
             String input = promptDate(prompt);
             if (input == null) return null;
-            if (LocalDate.parse(input).isAfter(checkInDate)) return input;
+            if (DateUtils.parseDate(input).isAfter(checkInDate)) return input;
             UIUtils.printError("Check-out date must be after check-in date.");
         }
     }

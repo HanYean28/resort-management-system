@@ -9,6 +9,7 @@ import java.io.BufferedWriter;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import utility.DateUtils;
 
 /**
  * Handles booking file operations for bookings.txt.
@@ -28,8 +29,22 @@ public class BookingDAO {
 
                 String[] parts = line.split("\\|");
                 if (parts.length == 9) {
-                    bookings.add(new BookingRequest(parts[0], parts[1], parts[2], parts[3], parts[4],
-                            parts[5], parts[6], parts[7], parts[8]));
+                    String bookingId = parts[0].trim();
+                    String confirmationNo = parts[1].trim();
+                    String bookingType = parts[2].trim();
+                    String roomType = parts[3].trim();
+                    String checkInDate = parts[4].trim();
+                    String checkOutDate = parts[5].trim();
+                    String status = parts[6].trim();
+                    String assignedRoomNumber = parts[7].trim();
+                    String createdAt = parts[8].trim();
+
+                    if (isValidBooking(bookingId, confirmationNo, bookingType, roomType,
+                            checkInDate, checkOutDate, status, assignedRoomNumber, createdAt)
+                            && !bookingIdExists(bookings, bookingId)) {
+                        bookings.add(new BookingRequest(bookingId, confirmationNo, bookingType, roomType,
+                                checkInDate, checkOutDate, status, assignedRoomNumber, createdAt));
+                    }
                 }
             }
         } catch (IOException e) {
@@ -58,5 +73,53 @@ public class BookingDAO {
 
     private void createFileIfMissing() {
         saveBookings(new ArrayList<BookingRequest>());
+    }
+
+    private boolean isValidBooking(String bookingId, String confirmationNo, String bookingType, String roomType,
+            String checkInDate, String checkOutDate, String status, String assignedRoomNumber, String createdAt) {
+        try {
+            DateUtils.parseDate(checkInDate);
+            DateUtils.parseDate(checkOutDate);
+        } catch (Exception e) {
+            return false;
+        }
+
+        return bookingId.matches("B\\d{4}")
+                && confirmationNo.matches("\\d{8}")
+                && isValidBookingType(bookingType)
+                && isValidRoomType(roomType)
+                && DateUtils.isAfter(checkOutDate, checkInDate)
+                && isValidStatus(status)
+                && !assignedRoomNumber.isEmpty()
+                && !createdAt.isEmpty();
+    }
+
+    private boolean bookingIdExists(ListInterface<BookingRequest> bookings, String bookingId) {
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            if (bookings.getEntry(i).getBookingId().equalsIgnoreCase(bookingId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isValidBookingType(String bookingType) {
+        return bookingType.equalsIgnoreCase("Walk-In")
+                || bookingType.equalsIgnoreCase("Standard")
+                || bookingType.equalsIgnoreCase("VIP");
+    }
+
+    private boolean isValidRoomType(String roomType) {
+        return roomType.equalsIgnoreCase("Standard")
+                || roomType.equalsIgnoreCase("Deluxe")
+                || roomType.equalsIgnoreCase("Suite");
+    }
+
+    private boolean isValidStatus(String status) {
+        return status.equalsIgnoreCase("Pending")
+                || status.equalsIgnoreCase("Assigned")
+                || status.equalsIgnoreCase("Checked In")
+                || status.equalsIgnoreCase("Checked Out")
+                || status.equalsIgnoreCase("Cancelled");
     }
 }
