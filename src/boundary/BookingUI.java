@@ -7,6 +7,7 @@ import control.BookingController.WalkInResult;
 import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
+import utility.DateUtils;
 import utility.UIUtils;
 
 import java.time.LocalDate;
@@ -613,7 +614,7 @@ public class BookingUI {
             String input = scanner.nextLine().trim();
             if (input.equals("0")) return null;
             try {
-                LocalDate.parse(input);
+                DateUtils.parseDate(input);
                 return input;
             } catch (Exception e) {
                 UIUtils.printError("Date format must be YYYY-MM-DD.");
@@ -625,7 +626,7 @@ public class BookingUI {
         while (true) {
             String input = promptDate(prompt);
             if (input == null) return null;
-            if (!LocalDate.parse(input).isBefore(LocalDate.now())) return input;
+            if (!DateUtils.isBeforeToday(input)) return input;
             UIUtils.printError("Check-in date cannot be before today.");
         }
     }
@@ -634,7 +635,7 @@ public class BookingUI {
         while (true) {
             String input = promptDate(prompt);
             if (input == null) return null;
-            if (LocalDate.parse(input).isAfter(checkInDate)) return input;
+            if (DateUtils.parseDate(input).isAfter(checkInDate)) return input;
             UIUtils.printError("Check-out date must be after check-in date.");
         }
     }

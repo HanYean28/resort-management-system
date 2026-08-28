@@ -11,11 +11,7 @@ import entity.BillingRecord;
 import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
-
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
+import utility.DateUtils;
 
 /**
  * Controller for Module 1 — Walk-In Registrations & Standard Booking Procedure.
@@ -23,9 +19,6 @@ import java.time.temporal.ChronoUnit;
  * @author Chang Han Yean
  */
 public class BookingController {
-
-    private static final DateTimeFormatter TIMESTAMP_FORMAT =
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     public static final String FILTER_ALL       = "ALL";
     public static final String TYPE_WALK_IN     = "Walk-In";
@@ -126,7 +119,7 @@ public class BookingController {
         Guest guest = getGuest(confirmationNo);
         if (guest == null) return WalkInResult.error("Guest not found. Add guest first.");
 
-        String checkInDate = LocalDate.now().toString();
+        String checkInDate = DateUtils.getTodayDate();
         String validation  = validateBookingInput(requestedRoomType, checkInDate, checkOutDate);
         if (validation != null) return WalkInResult.error(validation);
 
@@ -269,10 +262,8 @@ public class BookingController {
             return "Only assigned standard bookings can be checked in.";
         }
 
-        LocalDate today    = LocalDate.now();
-        LocalDate checkIn  = LocalDate.parse(booking.getCheckInDate());
-        LocalDate checkOut = LocalDate.parse(booking.getCheckOutDate());
-        if (today.isBefore(checkIn) || !today.isBefore(checkOut)) {
+        if (!DateUtils.isDateWithinStay(DateUtils.getTodayDate(), booking.getCheckInDate(),
+                booking.getCheckOutDate())) {
             return "Guest can only check in from check-in date until before check-out date.";
         }
 
@@ -367,10 +358,8 @@ public class BookingController {
     }
 
     public String getCheckoutDueLabel(BookingRequest booking) {
-        LocalDate today        = LocalDate.now();
-        LocalDate checkOutDate = LocalDate.parse(booking.getCheckOutDate());
-        if (checkOutDate.isBefore(today)) return "Overdue";
-        if (checkOutDate.isEqual(today))  return "Due Today";
+        if (DateUtils.isBefore(booking.getCheckOutDate(), DateUtils.getTodayDate())) return "Overdue";
+        if (booking.getCheckOutDate().equals(DateUtils.getTodayDate()))  return "Due Today";
         return "Not Due";
     }
 
@@ -514,11 +503,11 @@ public class BookingController {
             return "Room type must be Standard, Deluxe or Suite.";
         }
         try {
-            LocalDate checkIn  = LocalDate.parse(checkInDate);
-            LocalDate checkOut = LocalDate.parse(checkOutDate);
-            if (checkIn.isBefore(LocalDate.now()))
+            DateUtils.parseDate(checkInDate);
+            DateUtils.parseDate(checkOutDate);
+            if (DateUtils.isBeforeToday(checkInDate))
                 return "Check-in date cannot be before today.";
-            if (!checkOut.isAfter(checkIn))
+            if (!DateUtils.isAfter(checkOutDate, checkInDate))
                 return "Check-out date must be after check-in date.";
         } catch (Exception e) {
             return "Date format must be YYYY-MM-DD.";
@@ -578,8 +567,6 @@ public class BookingController {
     }
 
     private boolean hasDateClash(String roomNumber, BookingRequest target) {
-        LocalDate tIn  = LocalDate.parse(target.getCheckInDate());
-        LocalDate tOut = LocalDate.parse(target.getCheckOutDate());
         for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
             BookingRequest ex = bookings.getEntry(i);
             if (!(ex.getStatus().equals(STATUS_ASSIGNED)
@@ -588,34 +575,27 @@ public class BookingController {
                     || ex.getBookingId().equals(target.getBookingId())) {
                 continue;
             }
-            LocalDate eIn  = LocalDate.parse(ex.getCheckInDate());
-            LocalDate eOut = LocalDate.parse(ex.getCheckOutDate());
-            if (tIn.isBefore(eOut) && tOut.isAfter(eIn)) return true;
+            if (DateUtils.isDateOverlap(target.getCheckInDate(), target.getCheckOutDate(),
+                    ex.getCheckInDate(), ex.getCheckOutDate())) return true;
         }
         return false;
     }
 
     private boolean hasOverlappingActiveBooking(String confirmationNo,
             String checkInDate, String checkOutDate) {
-        LocalDate tIn  = LocalDate.parse(checkInDate);
-        LocalDate tOut = LocalDate.parse(checkOutDate);
         for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
             BookingRequest ex = bookings.getEntry(i);
             if (!ex.getConfirmationNo().equalsIgnoreCase(confirmationNo)
                     || !isActiveBooking(ex)) continue;
-            LocalDate eIn  = LocalDate.parse(ex.getCheckInDate());
-            LocalDate eOut = LocalDate.parse(ex.getCheckOutDate());
-            if (tIn.isBefore(eOut) && tOut.isAfter(eIn)) return true;
+            if (DateUtils.isDateOverlap(checkInDate, checkOutDate,
+                    ex.getCheckInDate(), ex.getCheckOutDate())) return true;
         }
         return false;
     }
 
     private boolean isDateOverlap(BookingRequest a, BookingRequest b) {
-        LocalDate aIn  = LocalDate.parse(a.getCheckInDate());
-        LocalDate aOut = LocalDate.parse(a.getCheckOutDate());
-        LocalDate bIn  = LocalDate.parse(b.getCheckInDate());
-        LocalDate bOut = LocalDate.parse(b.getCheckOutDate());
-        return aIn.isBefore(bOut) && aOut.isAfter(bIn);
+        return DateUtils.isDateOverlap(a.getCheckInDate(), a.getCheckOutDate(),
+                b.getCheckInDate(), b.getCheckOutDate());
     }
 
     private boolean isActiveBooking(BookingRequest b) {
@@ -681,9 +661,7 @@ public class BookingController {
     private void generatePaidBill(BookingRequest booking) {
         ListInterface<BillingRecord> bills = billingDAO.loadBillingRecords();
         if (billExists(bills, booking.getBookingId())) return;
-        int nights = (int) ChronoUnit.DAYS.between(
-                LocalDate.parse(booking.getCheckInDate()),
-                LocalDate.parse(booking.getCheckOutDate()));
+        int nights = DateUtils.countNights(booking.getCheckInDate(), booking.getCheckOutDate());
         double amount = nights * getRoomRate(booking.getRequestedRoomType());
         billingDAO.appendBillingRecord(new BillingRecord(
                 generateNextBillId(bills), booking.getBookingId(),
@@ -705,14 +683,30 @@ public class BookingController {
         int max = 0;
         for (int i = 1; i <= bills.getNumberOfEntries(); i++) {
             String id = bills.getEntry(i).getBillId();
-            if (id.startsWith("BL")) {
+            if (id != null && id.matches("BL\\d{4}")) {
                 try {
                     int n = Integer.parseInt(id.substring(2));
                     if (n > max) max = n;
                 } catch (NumberFormatException ignored) {}
             }
         }
-        return String.format("BL%04d", max + 1);
+
+        int nextNumber = max + 1;
+        String billId = String.format("BL%04d", nextNumber);
+        while (billIdExists(bills, billId)) {
+            nextNumber++;
+            billId = String.format("BL%04d", nextNumber);
+        }
+        return billId;
+    }
+
+    private boolean billIdExists(ListInterface<BillingRecord> bills, String billId) {
+        for (int i = 1; i <= bills.getNumberOfEntries(); i++) {
+            if (bills.getEntry(i).getBillId().equalsIgnoreCase(billId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public double getRoomRate(String roomType) {
@@ -726,14 +720,30 @@ public class BookingController {
         int max = 0;
         for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
             String id = bookings.getEntry(i).getBookingId();
-            if (id.startsWith("B")) {
+            if (id != null && id.matches("B\\d{4}")) {
                 try {
                     int n = Integer.parseInt(id.substring(1));
                     if (n > max) max = n;
                 } catch (NumberFormatException ignored) {}
             }
         }
-        return String.format("B%04d", max + 1);
+
+        int nextNumber = max + 1;
+        String bookingId = String.format("B%04d", nextNumber);
+        while (bookingIdExists(bookingId)) {
+            nextNumber++;
+            bookingId = String.format("B%04d", nextNumber);
+        }
+        return bookingId;
+    }
+
+    private boolean bookingIdExists(String bookingId) {
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            if (bookings.getEntry(i).getBookingId().equalsIgnoreCase(bookingId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String generateConfirmationNo() {
@@ -746,8 +756,19 @@ public class BookingController {
                 if (n > max) max = n;
             }
         }
-        if (max == 0) return LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
-        return String.format("%08d", max + 1);
+        int nextNumber;
+        if (max == 0) {
+            nextNumber = 80000001;
+        } else {
+            nextNumber = max + 1;
+        }
+
+        String confirmationNo = String.format("%08d", nextNumber);
+        while (frontDeskService.confirmationNumberExists(confirmationNo)) {
+            nextNumber++;
+            confirmationNo = String.format("%08d", nextNumber);
+        }
+        return confirmationNo;
     }
 
     private boolean isValidRoomType(String t) {
@@ -757,7 +778,7 @@ public class BookingController {
     }
 
     private String getCurrentTimestamp() {
-        return LocalDateTime.now().format(TIMESTAMP_FORMAT);
+        return DateUtils.getCurrentTimestamp();
     }
 
     private int countRoomTypeRequests(String roomType, String bookingTypeFilter) {

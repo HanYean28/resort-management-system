@@ -8,16 +8,12 @@ import dao.HousekeepingLogDAO;
 import dao.RoomDAO;
 import entity.HousekeepingLog;
 import entity.Room;
-
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import utility.DateUtils;
 
 /**
  * @author Chang Han Yean
  */
 public class HousekeepingController {
-    private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
     public static final String STATUS_DIRTY = "Dirty";
     public static final String STATUS_CLEANING = "Cleaning In Progress";
     public static final String STATUS_INSPECTED = "Inspected";
@@ -104,6 +100,19 @@ public class HousekeepingController {
         return activeTasks;
     }
 
+    public ListInterface<Room> getLateCheckoutTasksForToday() {
+        ListInterface<Room> lateCheckoutTasks = new ArrayList<>();
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            Room room = rooms.getEntry(i);
+            if (isActiveTask(room)
+                    && room.getOccupancyStatus().equalsIgnoreCase("Vacant")
+                    && isUpdatedToday(room)) {
+                lateCheckoutTasks.add(room);
+            }
+        }
+        return lateCheckoutTasks;
+    }
+
     public String updateRoomStatus(String roomNumber, String targetStatus) {
         Room room = getRoom(roomNumber);
         if (room == null) {
@@ -183,6 +192,48 @@ public class HousekeepingController {
         return lastLog;
     }
 
+    public String handleLateCheckout(String roomNumber) {
+        Room room = getRoom(roomNumber);
+        if (room == null) {
+            return "Room not found.";
+        }
+        if (!isActiveTask(room)) {
+            return "Room is not currently under housekeeping task.";
+        }
+        if (!isUpdatedToday(room)) {
+            return "Only today's housekeeping tasks can be handled as late checkout.";
+        }
+        if (room.getOccupancyStatus().equalsIgnoreCase("Occupied")) {
+            return "Room is already occupied.";
+        }
+
+        String oldStatus = room.getCleanlinessStatus();
+        String restoredStatus = STATUS_READY;
+        RoomRollbackEntry entry = findRollbackEntry(room.getRoomNumber());
+        while (entry != null && !entry.getStack().isEmpty()) {
+            HousekeepingLog lastLog = entry.getStack().pop();
+            restoredStatus = lastLog.getOldStatus();
+            if (restoredStatus.equals(STATUS_READY)) {
+                break;
+            }
+        }
+
+        String timestamp = getCurrentTimestamp();
+        room.setCleanlinessStatus(restoredStatus);
+        room.setOccupancyStatus("Occupied");
+        room.setLastUpdate(timestamp);
+        if (restoredStatus.equals(STATUS_READY)) {
+            room.setDirtySince("N/A");
+        }
+
+        HousekeepingLog log = new HousekeepingLog(room.getRoomNumber(), oldStatus, restoredStatus, timestamp,
+                HousekeepingLog.ACTION_LATE_CHECKOUT);
+        appendTaskHistory(log);
+        clearRollbackStack(room.getRoomNumber());
+        saveRoomsToFile();
+        return null;
+    }
+
     public ListInterface<HousekeepingLog> getTaskHistory(String roomNumber) {
         ListInterface<HousekeepingLog> results = new ArrayList<>();
         for (int i = 1; i <= taskHistory.getNumberOfEntries(); i++) {
@@ -213,7 +264,7 @@ public class HousekeepingController {
     }
 
     public ListInterface<HousekeepingLog> generateTaskHistoryReport(String roomNumberFilter,
-            String transitionFilter, boolean newestFirst) {
+            String transitionFilter, String actionFilter, boolean newestFirst) {
         ListInterface<HousekeepingLog> results = new ArrayList<>();
         for (int i = 1; i <= taskHistory.getNumberOfEntries(); i++) {
             HousekeepingLog log = taskHistory.getEntry(i);
@@ -221,8 +272,10 @@ public class HousekeepingController {
                     || log.getRoomNumber().equalsIgnoreCase(roomNumberFilter);
             boolean matchesTransition = transitionFilter.equals(FILTER_ALL)
                     || log.getNewStatus().equalsIgnoreCase(transitionFilter);
+            boolean matchesAction = actionFilter.equals(FILTER_ALL)
+                    || log.getAction().equalsIgnoreCase(actionFilter);
 
-            if (matchesRoom && matchesTransition) {
+            if (matchesRoom && matchesTransition && matchesAction) {
                 results.add(log);
             }
         }
@@ -285,6 +338,10 @@ public class HousekeepingController {
         return room.getCleanlinessStatus().equals(STATUS_DIRTY)
                 || room.getCleanlinessStatus().equals(STATUS_CLEANING)
                 || room.getCleanlinessStatus().equals(STATUS_INSPECTED);
+    }
+
+    private boolean isUpdatedToday(Room room) {
+        return DateUtils.isTodayTimestamp(room.getLastUpdate());
     }
 
     private boolean isStrictSequentialTransition(String currentStatus, String targetStatus) {
@@ -380,8 +437,15 @@ public class HousekeepingController {
         getOrCreateRollbackEntry(roomNumber).getStack().push(log);
     }
 
+    private void clearRollbackStack(String roomNumber) {
+        RoomRollbackEntry entry = findRollbackEntry(roomNumber);
+        if (entry != null) {
+            entry.getStack().clear();
+        }
+    }
+
     private String getCurrentTimestamp() {
-        return LocalDateTime.now().format(TIMESTAMP_FORMAT);
+        return DateUtils.getCurrentTimestamp();
     }
 
     private static class RoomRollbackEntry {

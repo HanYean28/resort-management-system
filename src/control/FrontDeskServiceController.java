@@ -12,7 +12,7 @@ import entity.BillingRecord;
 import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
-import java.time.LocalDate;
+import utility.DateUtils;
 import java.util.Iterator;
 
 /**
@@ -129,13 +129,13 @@ public class FrontDeskServiceController {
     }
 
     private boolean hasActiveBookingToday(String roomNumber) {
-        LocalDate today = LocalDate.now();
         ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
         for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
             BookingRequest booking = bookings.getEntry(i);
             if (booking.getAssignedRoomNumber().equalsIgnoreCase(roomNumber)
                     && isActiveRoomBookingStatus(booking.getStatus())
-                    && isDateWithinStay(today, booking.getCheckInDate(), booking.getCheckOutDate())) {
+                    && isDateWithinStay(DateUtils.getTodayDate(), booking.getCheckInDate(),
+                            booking.getCheckOutDate())) {
                 return true;
             }
         }
@@ -151,11 +151,9 @@ public class FrontDeskServiceController {
         return status.equalsIgnoreCase("Checked In");
     }
 
-    private boolean isDateWithinStay(LocalDate date, String checkInDate, String checkOutDate) {
+    private boolean isDateWithinStay(String date, String checkInDate, String checkOutDate) {
         try {
-            LocalDate checkIn = LocalDate.parse(checkInDate);
-            LocalDate checkOut = LocalDate.parse(checkOutDate);
-            return !date.isBefore(checkIn) && date.isBefore(checkOut);
+            return DateUtils.isDateWithinStay(date, checkInDate, checkOutDate);
         } catch (Exception e) {
             return false;
         }

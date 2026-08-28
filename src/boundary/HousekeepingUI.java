@@ -30,10 +30,11 @@ public class HousekeepingUI {
             System.out.println(" [3] Update Cleaning Status");
             System.out.println(" [4] Rollback Status");
             System.out.println(" [5] View Task History");
-            System.out.println(" [6] Generate Reports");
+            System.out.println(" [6] Handle Late Checkout");
+            System.out.println(" [7] Generate Reports");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-6): ");
+            System.out.print("Please enter choice (0-7): ");
 
             if (scanner.hasNextInt()) {
                 choice = scanner.nextInt();
@@ -62,6 +63,9 @@ public class HousekeepingUI {
                     handleViewTaskHistory();
                     break;
                 case 6:
+                    handleLateCheckout();
+                    break;
+                case 7:
                     handleReports();
                     break;
                 case 0:
@@ -225,12 +229,12 @@ public class HousekeepingUI {
             return;
         }
 
-        System.out.printf("%-4s | %-6s | %-19s | %-8s | %-22s | %-22s%n",
+        System.out.printf("%-4s | %-6s | %-19s | %-13s | %-22s | %-22s%n",
                 "No.", "Room", "Timestamp", "Action", "Old Status", "New Status");
         UIUtils.printSectionLine();
         for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
             HousekeepingLog log = logs.getEntry(i);
-            System.out.printf("%-4d | %-6s | %-19s | %-8s | %-22s | %-22s%n",
+            System.out.printf("%-4d | %-6s | %-19s | %-13s | %-22s | %-22s%n",
                     i,
                     log.getRoomNumber(),
                     log.getTimestamp(),
@@ -239,6 +243,43 @@ public class HousekeepingUI {
                     log.getNewStatus());
         }
         UIUtils.printSectionLine();
+    }
+
+    private void handleLateCheckout() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("HANDLE LATE CHECKOUT");
+
+        ListInterface<Room> tasks = manager.getLateCheckoutTasksForToday();
+        if (tasks.isEmpty()) {
+            System.out.println("No late checkout housekeeping tasks found for today.");
+            return;
+        }
+
+        displayRoomTable(tasks);
+        Room room = promptRoom("Enter Room Number for late checkout (or 0 to cancel): ");
+        if (room == null) {
+            System.out.println("\nLate checkout cancelled.");
+            return;
+        }
+
+        System.out.println();
+        printRoomSummary(room);
+        System.out.println("Late Checkout Action: room will be restored to Ready + Occupied.");
+        System.out.print("Confirm late checkout? (Y/N): ");
+
+        String confirm = readYesNoInput();
+        if (confirm == null || confirm.equalsIgnoreCase("N")) {
+            System.out.println("\nLate checkout cancelled.");
+            return;
+        }
+
+        String error = manager.handleLateCheckout(room.getRoomNumber());
+        if (error == null) {
+            System.out.println("\nLate checkout handled successfully.");
+            printRoomSummary(manager.getRoom(room.getRoomNumber()));
+        } else {
+            UIUtils.printError(error);
+        }
     }
 
     private void handleReports() {
@@ -337,6 +378,12 @@ public class HousekeepingUI {
             return;
         }
 
+        String actionFilter = promptActionFilter();
+        if (actionFilter == null) {
+            System.out.println("\nReport cancelled.");
+            return;
+        }
+
         Boolean newestFirst = promptHistorySortOrder();
         if (newestFirst == null) {
             System.out.println("\nReport cancelled.");
@@ -344,12 +391,13 @@ public class HousekeepingUI {
         }
 
         ListInterface<HousekeepingLog> logs = manager.generateTaskHistoryReport(
-                roomNumber, transitionFilter, newestFirst.booleanValue());
+                roomNumber, transitionFilter, actionFilter, newestFirst.booleanValue());
 
         UIUtils.clearScreen();
         UIUtils.printHeader("REPORT 2: TASK HISTORY");
         System.out.println("Room Filter       : " + formatFilter(roomNumber));
         System.out.println("New Status Filter : " + formatFilter(transitionFilter));
+        System.out.println("Action Filter     : " + formatFilter(actionFilter));
         System.out.println("Sort Order        : " + (newestFirst.booleanValue() ? "Newest First" : "Oldest First"));
         UIUtils.printSectionLine();
         displayHistoryTable(logs);
@@ -478,6 +526,38 @@ public class HousekeepingUI {
         }
     }
 
+    private String promptActionFilter() {
+        while (true) {
+            System.out.println("\nFilter by action:");
+            System.out.println(" [1] All Actions");
+            System.out.println(" [2] Update");
+            System.out.println(" [3] Rollback");
+            System.out.println(" [4] Late Checkout");
+            System.out.println(" [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-4): ");
+
+            Integer choice = readIntOption(0, 4);
+            if (choice == null) {
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 4.");
+                continue;
+            }
+            if (choice == 0) {
+                return null;
+            }
+            if (choice == 1) {
+                return HousekeepingController.FILTER_ALL;
+            }
+            if (choice == 2) {
+                return HousekeepingLog.ACTION_UPDATE;
+            }
+            if (choice == 3) {
+                return HousekeepingLog.ACTION_ROLLBACK;
+            }
+            return HousekeepingLog.ACTION_LATE_CHECKOUT;
+        }
+    }
+
     private Boolean promptHistorySortOrder() {
         while (true) {
             System.out.println("\nSort history by timestamp:");
@@ -535,12 +615,12 @@ public class HousekeepingUI {
             return;
         }
 
-        System.out.printf("%-4s | %-6s | %-19s | %-8s | %-22s | %-22s%n",
+        System.out.printf("%-4s | %-6s | %-19s | %-13s | %-22s | %-22s%n",
                 "No.", "Room", "Timestamp", "Action", "Old Status", "New Status");
         UIUtils.printSectionLine();
         for (int i = 1; i <= logs.getNumberOfEntries(); i++) {
             HousekeepingLog log = logs.getEntry(i);
-            System.out.printf("%-4d | %-6s | %-19s | %-8s | %-22s | %-22s%n",
+            System.out.printf("%-4d | %-6s | %-19s | %-13s | %-22s | %-22s%n",
                     i,
                     log.getRoomNumber(),
                     log.getTimestamp(),
