@@ -28,11 +28,19 @@ public class GuestDAO {
 
                 String[] parts = line.split("\\|");
                 if (parts.length == 4) {
-                    guests.add(new Guest(parts[0], parts[1], parts[2], parts[3]));
+                    String confirmationNo = parts[0].trim();
+                    String name = parts[1].trim();
+                    String phone = parts[2].trim();
+                    String loyaltyTier = parts[3].trim();
+
+                    if (isValidGuest(confirmationNo, name, phone)
+                            && !confirmationNoExists(guests, confirmationNo)) {
+                        guests.add(new Guest(confirmationNo, name, phone, loyaltyTier));
+                    }
                 }
             }
         } catch (IOException e) {
-            // Return empty list if file is missing.
+            createFileIfMissing();
         }
         return guests;
     }
@@ -50,5 +58,24 @@ public class GuestDAO {
         } catch (IOException e) {
             // Keep console flow simple; failed saves are ignored in this prototype.
         }
+    }
+
+    private boolean isValidGuest(String confirmationNo, String name, String phone) {
+        return confirmationNo.matches("\\d{8}")
+                && !name.isEmpty()
+                && !phone.isEmpty();
+    }
+
+    private boolean confirmationNoExists(ListInterface<Guest> guests, String confirmationNo) {
+        for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
+            if (guests.getEntry(i).getConfirmationNo().equalsIgnoreCase(confirmationNo)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void createFileIfMissing() {
+        saveGuests(new ArrayList<Guest>());
     }
 }

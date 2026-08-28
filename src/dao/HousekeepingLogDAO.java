@@ -30,7 +30,15 @@ public class HousekeepingLogDAO {
 
                 String[] parts = line.split("\\|");
                 if (parts.length == 5) {
-                    logs.add(new HousekeepingLog(parts[0], parts[1], parts[2], parts[3], parts[4]));
+                    String roomNumber = parts[0].trim();
+                    String oldStatus = parts[1].trim();
+                    String newStatus = parts[2].trim();
+                    String timestamp = parts[3].trim();
+                    String action = parts[4].trim();
+
+                    if (isValidLog(roomNumber, oldStatus, newStatus, timestamp, action)) {
+                        logs.add(new HousekeepingLog(roomNumber, oldStatus, newStatus, timestamp, action));
+                    }
                 }
             }
         } catch (IOException e) {
@@ -58,5 +66,27 @@ public class HousekeepingLogDAO {
         } catch (IOException e) {
             // Keep console flow simple; failed saves are ignored in this prototype.
         }
+    }
+
+    private boolean isValidLog(String roomNumber, String oldStatus, String newStatus, String timestamp,
+            String action) {
+        return !roomNumber.isEmpty()
+                && isValidCleanlinessStatus(oldStatus)
+                && isValidCleanlinessStatus(newStatus)
+                && !timestamp.isEmpty()
+                && isValidAction(action);
+    }
+
+    private boolean isValidCleanlinessStatus(String status) {
+        return status.equalsIgnoreCase("Dirty")
+                || status.equalsIgnoreCase("Cleaning In Progress")
+                || status.equalsIgnoreCase("Inspected")
+                || status.equalsIgnoreCase("Ready");
+    }
+
+    private boolean isValidAction(String action) {
+        return action.equalsIgnoreCase(HousekeepingLog.ACTION_UPDATE)
+                || action.equalsIgnoreCase(HousekeepingLog.ACTION_ROLLBACK)
+                || action.equalsIgnoreCase(HousekeepingLog.ACTION_LATE_CHECKOUT);
     }
 }

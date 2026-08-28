@@ -9,6 +9,7 @@ import java.io.BufferedWriter;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import utility.DateUtils;
 
 /**
  * Handles billing file operations for billing.txt.
@@ -28,9 +29,10 @@ public class BillingDAO {
 
                 String[] parts = line.split("\\|");
                 if (parts.length == 11) {
-                    bills.add(new BillingRecord(parts[0], parts[1], parts[2], parts[3], parts[4],
-                            parts[5], parts[6], Integer.parseInt(parts[7]), Double.parseDouble(parts[8]),
-                            parts[9], parts[10]));
+                    BillingRecord bill = createBillingRecord(parts);
+                    if (bill != null && !billIdExists(bills, bill.getBillId())) {
+                        bills.add(bill);
+                    }
                 }
             }
         } catch (IOException e) {
@@ -58,5 +60,69 @@ public class BillingDAO {
         } catch (IOException e) {
             // Keep console flow simple; failed saves are ignored in this prototype.
         }
+    }
+
+    private BillingRecord createBillingRecord(String[] parts) {
+        String billId = parts[0].trim();
+        String bookingId = parts[1].trim();
+        String confirmationNo = parts[2].trim();
+        String roomNumber = parts[3].trim();
+        String roomType = parts[4].trim();
+        String checkInDate = parts[5].trim();
+        String checkOutDate = parts[6].trim();
+        String paymentStatus = parts[9].trim();
+        String createdAt = parts[10].trim();
+
+        try {
+            int nights = Integer.parseInt(parts[7].trim());
+            double amount = Double.parseDouble(parts[8].trim());
+
+            if (isValidBilling(billId, bookingId, confirmationNo, roomNumber, roomType,
+                    checkInDate, checkOutDate, nights, amount, paymentStatus, createdAt)) {
+                return new BillingRecord(billId, bookingId, confirmationNo, roomNumber, roomType,
+                        checkInDate, checkOutDate, nights, amount, paymentStatus, createdAt);
+            }
+        } catch (Exception e) {
+            return null;
+        }
+
+        return null;
+    }
+
+    private boolean isValidBilling(String billId, String bookingId, String confirmationNo, String roomNumber,
+            String roomType, String checkInDate, String checkOutDate, int nights, double amount,
+            String paymentStatus, String createdAt) {
+        try {
+            DateUtils.parseDate(checkInDate);
+            DateUtils.parseDate(checkOutDate);
+        } catch (Exception e) {
+            return false;
+        }
+
+        return billId.matches("BL\\d{4}")
+                && bookingId.matches("B\\d{4}")
+                && confirmationNo.matches("\\d{8}")
+                && !roomNumber.isEmpty()
+                && isValidRoomType(roomType)
+                && DateUtils.isAfter(checkOutDate, checkInDate)
+                && nights > 0
+                && amount >= 0
+                && !paymentStatus.isEmpty()
+                && !createdAt.isEmpty();
+    }
+
+    private boolean billIdExists(ListInterface<BillingRecord> bills, String billId) {
+        for (int i = 1; i <= bills.getNumberOfEntries(); i++) {
+            if (bills.getEntry(i).getBillId().equalsIgnoreCase(billId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isValidRoomType(String roomType) {
+        return roomType.equalsIgnoreCase("Standard")
+                || roomType.equalsIgnoreCase("Deluxe")
+                || roomType.equalsIgnoreCase("Suite");
     }
 }
