@@ -63,10 +63,19 @@ public class BookingController {
     // ═══════════════════════════════════════════════════════
 
     public Guest addGuest(String name, String phone) {
-        if (name.isEmpty() || phone.isEmpty()) return null;
+        if (name.isEmpty() || !isValidPhoneNumber(phone)) return null;
         String confirmationNo = generateConfirmationNo();
         frontDeskService.addGuest(new Guest(confirmationNo, name, phone, "NONE"));
         return frontDeskService.searchByConfirmationNumber(confirmationNo);
+    }
+
+    private boolean isValidPhoneNumber(String phone) {
+        if (phone == null || phone.trim().isEmpty()) {
+            return false;
+        }
+
+        String digitsOnly = phone.replace("-", "").replace(" ", "");
+        return digitsOnly.matches("\\d{10,11}");
     }
 
     public Guest getGuest(String confirmationNo) {

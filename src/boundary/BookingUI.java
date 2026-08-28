@@ -93,7 +93,7 @@ public class BookingUI {
             System.out.println("\nGuest added successfully.");
             System.out.println("Generated Confirmation No: " + guest.getConfirmationNo());
         } else {
-            UIUtils.printError("Guest name and phone cannot be empty.");
+            UIUtils.printError("Guest name cannot be empty and phone number must contain 10 or 11 digits.");
         }
     }
 
