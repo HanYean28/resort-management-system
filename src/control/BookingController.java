@@ -368,6 +368,23 @@ public class BookingController {
         return pendingQueue.size();
     }
 
+    public ListInterface<BookingRequest> getPendingStandardQueue() {
+        ListInterface<BookingRequest> results = new ArrayList<>();
+        QueueInterface<BookingRequest> tempQueue = new ArrayQueue<>();
+
+        while (!pendingQueue.isEmpty()) {
+            BookingRequest booking = pendingQueue.dequeue();
+            results.add(booking);
+            tempQueue.enqueue(booking);
+        }
+
+        while (!tempQueue.isEmpty()) {
+            pendingQueue.enqueue(tempQueue.dequeue());
+        }
+
+        return results;
+    }
+
     // ═══════════════════════════════════════════════════════
     // Reports
     // ═══════════════════════════════════════════════════════

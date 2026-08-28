@@ -34,14 +34,15 @@ public class BookingUI {
             System.out.println(" [2] Add Walk-In Booking");
             System.out.println(" [3] Add Standard Booking");
             System.out.println(" [4] View Current Bookings");
-            System.out.println(" [5] Auto Assign Room");
-            System.out.println(" [6] Check In Booking");
-            System.out.println(" [7] Check Out Booking");
-            System.out.println(" [8] Cancel Booking");
-            System.out.println(" [9] Generate Reports");
+            System.out.println(" [5] View Pending Standard Queue");
+            System.out.println(" [6] Auto Assign Room");
+            System.out.println(" [7] Check In Booking");
+            System.out.println(" [8] Check Out Booking");
+            System.out.println(" [9] Cancel Booking");
+            System.out.println(" [10] Generate Reports");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-9): ");
+            System.out.print("Please enter choice (0-10): ");
 
             if (scanner.hasNextInt()) {
                 choice = scanner.nextInt();
@@ -58,11 +59,12 @@ public class BookingUI {
                 case 2: handleAddWalkIn();          break;
                 case 3: handleAddStandardBooking(); break;
                 case 4: handleViewBookings();       break;
-                case 5: handleAutoAssign();         break;
-                case 6: handleCheckInBooking();     break;
-                case 7: handleCheckOutBooking();    break;
-                case 8: handleCancelBooking();      break;
-                case 9: handleReports();            break;
+                case 5: handleViewPendingQueue();   break;
+                case 6: handleAutoAssign();         break;
+                case 7: handleCheckInBooking();     break;
+                case 8: handleCheckOutBooking();    break;
+                case 9: handleCancelBooking();      break;
+                case 10: handleReports();           break;
                 case 0:
                     UIUtils.clearScreen();
                     System.out.println("Returning to Main Menu...");
@@ -230,6 +232,13 @@ public class BookingUI {
         UIUtils.printHeader("CURRENT BOOKING RECORDS");
         ListInterface<BookingRequest> bookings = controller.getCurrentBookings();
         displayBookingTable(bookings);
+    }
+
+    private void handleViewPendingQueue() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("PENDING STANDARD QUEUE");
+        ListInterface<BookingRequest> queue = controller.getPendingStandardQueue();
+        displayPendingQueueTable(queue);
     }
 
     /**
@@ -689,6 +698,29 @@ public class BookingUI {
         if (showTotal) {
             System.out.println("Total Bookings: " + bookings.getNumberOfEntries());
         }
+    }
+
+    private void displayPendingQueueTable(ListInterface<BookingRequest> queue) {
+        if (queue.isEmpty()) {
+            System.out.println("No pending standard booking found.");
+            return;
+        }
+
+        System.out.printf("%-4s | %-7s | %-14s | %-10s | %-10s | %-10s%n",
+                "No.", "ID", "Guest", "Room Type", "Check-In", "Check-Out");
+        UIUtils.printSectionLine();
+        for (int i = 1; i <= queue.getNumberOfEntries(); i++) {
+            BookingRequest booking = queue.getEntry(i);
+            System.out.printf("%-4d | %-7s | %-14s | %-10s | %-10s | %-10s%n",
+                    i,
+                    booking.getBookingId(),
+                    booking.getGuest().getName(),
+                    booking.getRequestedRoomType(),
+                    booking.getCheckInDate(),
+                    booking.getCheckOutDate());
+        }
+        UIUtils.printSectionLine();
+        System.out.println("Pending Queue Size: " + queue.getNumberOfEntries());
     }
 
     private void printBookingDetail(BookingRequest booking) {
