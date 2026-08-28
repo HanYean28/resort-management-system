@@ -1,16 +1,18 @@
 package control;
 
 import adt.ArrayPriorityQueue;
-import adt.ListInterface;
-import dao.BookingDAO;
-import dao.GuestDAO;
-import dao.RoomDAO;
-import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -24,12 +26,31 @@ import java.util.Map;
  *   rooms.txt    — roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
  *   bookings.txt — bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt
  *
- * @author Kaizen Soh
+ * @author Lim How Voon
  */
 public class VIPRoomAllocation {
 
+    // -------------------------------------------------------
+    // File paths
+    // -------------------------------------------------------
+
+    private static final String GUESTS_FILE   = "guests.txt";
+    private static final String ROOMS_FILE    = "rooms.txt";
+    private static final String BOOKINGS_FILE = "bookings.txt";
+    private static final String BILLING_FILE  = "billing.txt";
+
     private static final DateTimeFormatter TIMESTAMP_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+    // Nightly rates per loyalty tier.
+    private static final Map<String, Double> TIER_RATES = new HashMap<>();
+    static {
+        TIER_RATES.put("DIAMOND",  1099.00);
+        TIER_RATES.put("ELITE",     899.00);
+        TIER_RATES.put("PLATINUM",  699.00);
+        TIER_RATES.put("GOLD",      599.00);
+        TIER_RATES.put("SILVER",    399.00);
+    }
 
     // -------------------------------------------------------
     // Fields
@@ -47,9 +68,11 @@ public class VIPRoomAllocation {
     /** Maps confirmationNo → requested room type for each VIP guest. */
     private Map<String, String> requestedRoomTypes;
 
-    private GuestDAO guestDAO;
-    private RoomDAO roomDAO;
-    private BookingDAO bookingDAO;
+    /** Maps confirmationNo → check-in date (yyyy-MM-dd). */
+    private Map<String, String> checkInDates;
+
+    /** Maps confirmationNo → check-out date (yyyy-MM-dd). */
+    private Map<String, String> checkOutDates;
 
     // -------------------------------------------------------
     // Constructor
@@ -64,9 +87,8 @@ public class VIPRoomAllocation {
         allRooms           = new ArrayList<>();
         allocationLog      = new ArrayList<>();
         requestedRoomTypes = new HashMap<>();
-        guestDAO           = new GuestDAO();
-        roomDAO            = new RoomDAO();
-        bookingDAO         = new BookingDAO();
+        checkInDates       = new HashMap<>();
+        checkOutDates      = new HashMap<>();
 
         loadGuestsFromFile();
         loadRoomsFromFile();
@@ -88,24 +110,47 @@ public class VIPRoomAllocation {
      */
     private void loadGuestsFromFile() {
 
-        ListInterface<Guest> guests = guestDAO.loadGuests();
+        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
 
-        for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
+            String line;
 
-            Guest guest = guests.getEntry(i);
-            guest.setLoyaltyTier(normaliseTier(guest.getLoyaltyTier()));
+            while ((line = br.readLine()) != null) {
 
-            // Skip non-VIP guests.
-            if (guest.getLoyaltyTier().equalsIgnoreCase("NONE")) {
-                continue;
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+
+                if (parts.length < 4) {
+                    continue;
+                }
+
+                String confirmationNo = parts[0].trim();
+                String name           = parts[1].trim();
+                String phone          = parts[2].trim();
+                String loyaltyTier    = normaliseTier(parts[3].trim());
+
+                // Skip non-VIP guests.
+                if (loyaltyTier.equalsIgnoreCase("NONE")) {
+                    continue;
+                }
+
+                // Skip duplicates already in the queue.
+                if (vipQueue.find(confirmationNo) != null) {
+                    continue;
+                }
+
+                Guest guest = new Guest(confirmationNo, name, phone, loyaltyTier);
+                vipQueue.add(guest);
             }
 
-            // Skip duplicates already in the queue.
-            if (vipQueue.find(guest.getConfirmationNo()) != null) {
-                continue;
-            }
+            System.out.println("[VIP] Guests loaded from " + GUESTS_FILE);
 
-            vipQueue.add(guest);
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not read " + GUESTS_FILE + ": " + e.getMessage());
         }
     }
 
@@ -120,10 +165,50 @@ public class VIPRoomAllocation {
     private void loadRoomsFromFile() {
 
         allRooms.clear();
-        ListInterface<Room> rooms = roomDAO.loadRooms();
 
-        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
-            allRooms.add(rooms.getEntry(i));
+        try (BufferedReader br = new BufferedReader(new FileReader(ROOMS_FILE))) {
+
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+
+                if (parts.length < 7) {
+                    continue;
+                }
+
+                String roomNumber            = parts[0].trim();
+                String roomType              = parts[1].trim();
+                String cleanlinessStatus     = parts[2].trim();
+                String occupancyStatus       = parts[3].trim();
+                String lastUpdate            = parts[4].trim();
+                String dirtySince            = parts[5].trim();
+                String lastTurnaroundMinutes = parts[6].trim();
+
+                Room room = new Room(
+                        roomNumber,
+                        roomType,
+                        cleanlinessStatus,
+                        occupancyStatus,
+                        lastUpdate,
+                        dirtySince,
+                        lastTurnaroundMinutes
+                );
+
+                allRooms.add(room);
+            }
+
+            System.out.println("[VIP] Rooms loaded from " + ROOMS_FILE);
+
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not read " + ROOMS_FILE + ": " + e.getMessage());
         }
     }
 
@@ -139,26 +224,25 @@ public class VIPRoomAllocation {
      */
     public void saveGuestsToFile() {
 
-        ListInterface<Guest> guests = guestDAO.loadGuests();
-        Guest[] all = vipQueue.getAll();
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(GUESTS_FILE))) {
 
-        for (Guest guest : all) {
-            if (guest != null) {
-                saveOrReplaceGuest(guests, guest);
+            bw.write("# confirmationNo|name|phone|loyaltyTier");
+            bw.newLine();
+
+            Guest[] all = vipQueue.getAll();
+
+            for (Guest g : all) {
+                if (g == null) continue;
+                bw.write(g.getConfirmationNo() + "|"
+                        + g.getName()          + "|"
+                        + g.getPhone()         + "|"
+                        + g.getLoyaltyTier());
+                bw.newLine();
             }
-        }
 
-        guestDAO.saveGuests(guests);
-    }
-
-    private void saveOrReplaceGuest(ListInterface<Guest> guests, Guest guest) {
-        for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
-            if (guests.getEntry(i).getConfirmationNo().equalsIgnoreCase(guest.getConfirmationNo())) {
-                guests.replace(i, guest);
-                return;
-            }
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not save " + GUESTS_FILE + ": " + e.getMessage());
         }
-        guests.add(guest);
     }
 
     /**
@@ -168,40 +252,148 @@ public class VIPRoomAllocation {
      */
     public void saveRoomsToFile() {
 
-        ListInterface<Room> rooms = new adt.ArrayList<>();
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(ROOMS_FILE))) {
 
-        for (Room r : allRooms) {
-            if (r == null) continue;
-            rooms.add(r);
+            bw.write("# roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes");
+            bw.newLine();
+
+            for (Room r : allRooms) {
+                if (r == null) continue;
+                bw.write(r.getRoomNumber()            + "|"
+                        + r.getRoomType()             + "|"
+                        + r.getCleanlinessStatus()    + "|"
+                        + r.getOccupancyStatus()      + "|"
+                        + r.getLastUpdate()           + "|"
+                        + r.getDirtySince()           + "|"
+                        + r.getLastTurnaroundMinutes());
+                bw.newLine();
+            }
+
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not save " + ROOMS_FILE + ": " + e.getMessage());
         }
-
-        roomDAO.saveRooms(rooms);
     }
 
     /**
      * Appends a new booking record to bookings.txt when a room
      * is allocated to a VIP guest.
      *
-     * Format: bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt
+     * Uses the stored checkInDate and checkOutDate for the guest.
      */
     private void saveBookingToFile(Guest guest, Room room) {
 
-        String bookingId  = generateNextBookingId();
-        String createdAt  = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+        String bookingId   = generateNextBookingId();
+        String createdAt   = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+        String checkIn     = checkInDates.getOrDefault(guest.getConfirmationNo(), "N/A");
+        String checkOut    = checkOutDates.getOrDefault(guest.getConfirmationNo(), "N/A");
 
-        ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
-        BookingRequest booking = new BookingRequest(
-                bookingId,
-                guest.getConfirmationNo(),
-                "VIP",
-                room.getRoomType(),
-                "N/A",
-                "N/A",
-                "Assigned",
-                room.getRoomNumber(),
-                createdAt);
-        bookings.add(booking);
-        bookingDAO.saveBookings(bookings);
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
+
+            bw.write(bookingId                  + "|"
+                    + guest.getConfirmationNo()  + "|"
+                    + "VIP"                      + "|"
+                    + room.getRoomType()          + "|"
+                    + checkIn                     + "|"
+                    + checkOut                    + "|"
+                    + "Assigned"                  + "|"
+                    + room.getRoomNumber()         + "|"
+                    + createdAt);
+            bw.newLine();
+
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not append to " + BOOKINGS_FILE
+                    + ": " + e.getMessage());
+        }
+
+        // Generate billing record immediately after booking.
+        saveBillingToFile(guest, room, bookingId, checkIn, checkOut);
+    }
+
+    /**
+     * Appends a billing record to billing.txt.
+     *
+     * Calculates nights from checkIn/checkOut dates.
+     * Rate is determined by the guest's loyalty tier.
+     *
+     * File format:
+     *   billId|bookingId|confirmationNo|roomNumber|roomType
+     *   |checkInDate|checkOutDate|nights|amount|paymentStatus|createdAt
+     */
+    private void saveBillingToFile(Guest guest, Room room,
+            String bookingId, String checkIn, String checkOut) {
+
+        String billId    = generateNextBillId();
+        String createdAt = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+
+        long nights = 1; // default if dates are invalid
+
+        try {
+            LocalDate in  = LocalDate.parse(checkIn);
+            LocalDate out = LocalDate.parse(checkOut);
+            long computed = ChronoUnit.DAYS.between(in, out);
+            if (computed > 0) nights = computed;
+        } catch (Exception ignored) {}
+
+        double rate   = TIER_RATES.getOrDefault(
+                guest.getLoyaltyTier().toUpperCase(), 399.00);
+        double amount = nights * rate;
+
+        try (BufferedWriter bw = new BufferedWriter(
+                new FileWriter(BILLING_FILE, true))) {
+
+            bw.write(billId                      + "|"
+                    + bookingId                   + "|"
+                    + guest.getConfirmationNo()   + "|"
+                    + room.getRoomNumber()         + "|"
+                    + room.getRoomType()           + "|"
+                    + checkIn                      + "|"
+                    + checkOut                     + "|"
+                    + nights                       + "|"
+                    + String.format("%.2f", amount) + "|"
+                    + "Paid"                       + "|"
+                    + createdAt);
+            bw.newLine();
+
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not append to " + BILLING_FILE
+                    + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Generates the next bill ID (BL####) by reading the highest
+     * existing BL-prefixed ID from billing.txt and incrementing it.
+     */
+    private String generateNextBillId() {
+
+        int max = 0;
+
+        try (BufferedReader br = new BufferedReader(
+                new FileReader(BILLING_FILE))) {
+
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+
+                if (parts.length > 0 && parts[0].startsWith("BL")) {
+                    try {
+                        int num = Integer.parseInt(parts[0].substring(2));
+                        if (num > max) max = num;
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+
+        } catch (IOException ignored) {}
+
+        return String.format("BL%04d", max + 1);
     }
 
     /**
@@ -211,17 +403,30 @@ public class VIPRoomAllocation {
     private String generateNextBookingId() {
 
         int max = 0;
-        ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
 
-        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
-            String id = bookings.getEntry(i).getBookingId();
-            if (id.startsWith("B")) {
-                try {
-                    int num = Integer.parseInt(id.substring(1));
-                    if (num > max) max = num;
-                } catch (NumberFormatException ignored) {}
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+
+                String[] parts = line.split("\\|");
+
+                if (parts.length > 0 && parts[0].startsWith("B")) {
+                    try {
+                        int num = Integer.parseInt(parts[0].substring(1));
+                        if (num > max) max = num;
+                    } catch (NumberFormatException ignored) {}
+                }
             }
-        }
+
+        } catch (IOException ignored) {}
 
         return String.format("B%04d", max + 1);
     }
@@ -247,11 +452,12 @@ public class VIPRoomAllocation {
     }
 
     /**
-     * Adds a VIP guest with their requested room type.
-     * The requested room type is stored separately and used
-     * during allocation to auto-match a suitable room.
+     * Adds a VIP guest with their requested room type and stay dates.
+     * All preferences are stored in maps keyed by confirmation number
+     * and used during allocation and billing.
      */
-    public void addGuest(Guest guest, String requestedRoomType) {
+    public void addGuest(Guest guest, String requestedRoomType,
+            String checkInDate, String checkOutDate) {
 
         if (guest == null) {
             throw new IllegalArgumentException("Guest cannot be null.");
@@ -263,7 +469,29 @@ public class VIPRoomAllocation {
             requestedRoomTypes.put(guest.getConfirmationNo(), requestedRoomType.trim());
         }
 
+        if (checkInDate != null && !checkInDate.trim().isEmpty()) {
+            checkInDates.put(guest.getConfirmationNo(), checkInDate.trim());
+        }
+
+        if (checkOutDate != null && !checkOutDate.trim().isEmpty()) {
+            checkOutDates.put(guest.getConfirmationNo(), checkOutDate.trim());
+        }
+
         saveGuestsToFile();
+    }
+
+    /**
+     * Returns the check-in date for a given confirmation number.
+     */
+    public String getCheckInDate(String confirmationNo) {
+        return checkInDates.getOrDefault(confirmationNo, "N/A");
+    }
+
+    /**
+     * Returns the check-out date for a given confirmation number.
+     */
+    public String getCheckOutDate(String confirmationNo) {
+        return checkOutDates.getOrDefault(confirmationNo, "N/A");
     }
 
     /**
@@ -304,8 +532,8 @@ public class VIPRoomAllocation {
         // Remove guest from queue.
         vipQueue.removeByConfirmationNo(guest.getConfirmationNo());
 
-        // Update room status.
-        target.setOccupancyStatus("Occupied");
+        // Room stays Vacant — it becomes Occupied only when guest checks in.
+        // Just update lastUpdate to record when the assignment happened.
         target.setLastUpdate(LocalDateTime.now().format(TIMESTAMP_FORMAT));
 
         // Persist.
@@ -458,8 +686,7 @@ public class VIPRoomAllocation {
         // Remove guest from queue.
         vipQueue.remove();
 
-        // Update room status.
-        matched.setOccupancyStatus("Occupied");
+        // Room stays Vacant — becomes Occupied only when guest checks in.
         matched.setLastUpdate(LocalDateTime.now().format(TIMESTAMP_FORMAT));
 
         // Persist.
@@ -515,16 +742,32 @@ public class VIPRoomAllocation {
     public String generateConfirmationNo() {
 
         int max = 0;
-        ListInterface<Guest> guests = guestDAO.loadGuests();
 
-        for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
-            try {
-                int num = Integer.parseInt(guests.getEntry(i).getConfirmationNo());
-                if (num > max) {
-                    max = num;
+        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
+
+            String line;
+
+            while ((line = br.readLine()) != null) {
+
+                line = line.trim();
+
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
                 }
-            } catch (NumberFormatException ignored) {}
-        }
+
+                String[] parts = line.split("\\|");
+
+                if (parts.length >= 1) {
+                    try {
+                        int num = Integer.parseInt(parts[0].trim());
+                        if (num > max) {
+                            max = num;
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+
+        } catch (IOException ignored) {}
 
         return String.format("%08d", max + 1);
     }
