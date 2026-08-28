@@ -16,7 +16,7 @@ import utility.DateUtils;
 /**
  * Controller for Module 1 — Walk-In Registrations & Standard Booking Procedure.
  *
- * @author Chang Han Yean
+ * @author Elwin Goh Yao Zu
  */
 public class BookingController {
 

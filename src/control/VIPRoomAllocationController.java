@@ -24,7 +24,7 @@ import utility.DateUtils;
  *   rooms.txt    — roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
  *   bookings.txt — bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt
  *
- * @author Lim How Voon
+ * @author Kaizen Soh
  */
 public class VIPRoomAllocationController {
 

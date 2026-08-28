@@ -12,6 +12,7 @@ import java.io.IOException;
 
 /**
  * Handles billing file operations for billing.txt.
+ * @author Lim How Voon
  */
 public class BillingDAO {
     private static final String DATA_FILE = "billing.txt";

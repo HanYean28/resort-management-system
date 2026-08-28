@@ -12,6 +12,7 @@ import java.io.IOException;
 
 /**
  * Handles guest file operations for guests.txt.
+ * @author Lim How Voon
  */
 public class GuestDAO {
     private static final String DATA_FILE = "guests.txt";
