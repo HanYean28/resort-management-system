@@ -1185,7 +1185,14 @@ public class VIPRoomAllocationController {
 
         } catch (IOException ignored) {}
 
-        return String.format("%08d", max + 1);
+        int next = max + 1;
+
+        if (next > 99999999) {
+            throw new IllegalStateException(
+                    "Cannot generate confirmation number. 8-digit limit reached.");
+        }
+
+        return String.format("%08d", next);
     }
 
     /**
