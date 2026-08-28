@@ -35,14 +35,14 @@ public class VIPRoomAllocationUI {
 
     private static final String BOOKINGS_FILE = "bookings.txt";
 
-    // Status constants — defined locally since VIPRoomAllocation does not expose them publicly.
+    // Status constants — defined locally since VIPRoomAllocationController does not expose them publicly.
     private static final String STATUS_PENDING     = "Pending";
     private static final String STATUS_ASSIGNED    = "Assigned";
     private static final String STATUS_CHECKED_IN  = "Checked In";
     private static final String STATUS_CHECKED_OUT = "Checked Out";
     private static final String STATUS_CANCELLED   = "Cancelled";
 
-    // Tier rates — mirrors VIPRoomAllocation.TIER_RATES (private there, duplicated here for preview).
+    // Tier rates — mirrors VIPRoomAllocationController.TIER_RATES (private there, duplicated here for preview).
     private static final java.util.Map<String, Double> TIER_RATES = new java.util.HashMap<>();
     static {
         TIER_RATES.put("DIAMOND",  1099.00);
@@ -315,7 +315,7 @@ public class VIPRoomAllocationUI {
             return;
         }
 
-        // Billing preview — mirrors VIPRoomAllocation.saveBillingToFile logic.
+        // Billing preview — mirrors VIPRoomAllocationController.saveBillingToFile logic.
         double preview = computePreview(g.getLoyaltyTier(), checkIn, checkOut);
         UIUtils.printSectionLine();
         System.out.println("Room Type  : " + roomType);
@@ -504,13 +504,14 @@ public class VIPRoomAllocationUI {
             UIUtils.clearScreen();
             UIUtils.printHeader("VIP BOOKING REPORTS");
             System.out.println(" [1] Report 1: VIP Booking Report");
+            System.out.println(" [2] Report 2: VIP Revenue Summary Report");
             System.out.println(" [0] Back to VIP Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-1): ");
+            System.out.print("Please enter choice (0-2): ");
 
-            Integer selected = readIntOption(0, 1);
+            Integer selected = readIntOption(0, 2);
             if (selected == null) {
-                UIUtils.printError("Invalid choice! Please enter a number between 0 and 1.");
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 2.");
                 UIUtils.pressEnterToContinue(scanner);
                 continue;
             }
@@ -519,6 +520,10 @@ public class VIPRoomAllocationUI {
             switch (choice) {
                 case 1:
                     handleVipBookingReport();
+                    UIUtils.pressEnterToContinue(scanner);
+                    break;
+                case 2:
+                    handleVipRevenueSummaryReport();
                     UIUtils.pressEnterToContinue(scanner);
                     break;
                 case 0:
@@ -583,6 +588,62 @@ public class VIPRoomAllocationUI {
         }
 
         displayBookingTableWithTier(filtered);
+    }
+
+    /** Displays paid VIP revenue grouped by loyalty tier with filters. */
+    private void handleVipRevenueSummaryReport() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 2: VIP REVENUE SUMMARY REPORT");
+
+        String tierFilter = promptRevenueTierFilter();
+        if (tierFilter == null) {
+            System.out.println("\nReport cancelled.");
+            return;
+        }
+
+        String roomFilter = promptRoomTypeFilter();
+        if (roomFilter == null) {
+            System.out.println("\nReport cancelled.");
+            return;
+        }
+
+        List<VIPRoomAllocationController.VipRevenueRow> rows =
+                ctrl.generateVipRevenueSummary(tierFilter, roomFilter);
+
+        UIUtils.clearScreen();
+        UIUtils.printHeader("REPORT 2: VIP REVENUE SUMMARY REPORT");
+        System.out.println("Loyalty Tier : " + tierFilter);
+        System.out.println("Room Type    : " + roomFilter);
+        System.out.println("Payment      : Paid");
+        UIUtils.printSectionLine();
+
+        System.out.printf("%-12s | %12s | %18s%n",
+                "Tier", "Bookings", "Revenue (RM)");
+        UIUtils.printSectionLine();
+
+        int totalBookings = 0;
+        double totalRevenue = 0.0;
+
+        for (VIPRoomAllocationController.VipRevenueRow row : rows) {
+            System.out.printf("%-12s | %12d | %,18.2f%n",
+                    row.getTier(),
+                    row.getBookingCount(),
+                    row.getRevenue());
+
+            totalBookings += row.getBookingCount();
+            totalRevenue += row.getRevenue();
+        }
+
+        UIUtils.printSectionLine();
+        System.out.printf("%-12s | %12d | %,18.2f%n",
+                "TOTAL", totalBookings, totalRevenue);
+        UIUtils.printSectionLine();
+
+        if (totalBookings == 0) {
+            System.out.println("No paid VIP billing records match the selected filters.");
+        } else {
+            System.out.println("Only paid VIP bookings are included in this report.");
+        }
     }
 
     // -------------------------------------------------------
@@ -662,7 +723,7 @@ public class VIPRoomAllocationUI {
 
     /**
      * Computes a billing preview: nights × tier rate.
-     * Mirrors VIPRoomAllocation.saveBillingToFile logic exactly.
+     * Mirrors VIPRoomAllocationController.saveBillingToFile logic exactly.
      */
     private double computePreview(String loyaltyTier, String checkIn, String checkOut) {
         long nights = 1;
@@ -879,6 +940,33 @@ public class VIPRoomAllocationUI {
                 case 4: return STATUS_CHECKED_IN;
                 case 5: return STATUS_CHECKED_OUT;
                 case 6: return STATUS_CANCELLED;
+            }
+        }
+    }
+
+
+    private String promptRevenueTierFilter() {
+        while (true) {
+            System.out.println("Filter by loyalty tier:");
+            System.out.println(" [1] All  [2] Diamond  [3] Elite  [4] Platinum");
+            System.out.println(" [5] Gold  [6] Silver  [0] Cancel");
+            UIUtils.printSectionLine();
+            System.out.print("Please enter choice (0-6): ");
+
+            Integer choice = readIntOption(0, 6);
+            if (choice == null) {
+                UIUtils.printError("Invalid choice! Please enter a number between 0 and 6.");
+                continue;
+            }
+
+            switch (choice) {
+                case 0: return null;
+                case 1: return "ALL";
+                case 2: return "Diamond";
+                case 3: return "Elite";
+                case 4: return "Platinum";
+                case 5: return "Gold";
+                case 6: return "Silver";
             }
         }
     }
