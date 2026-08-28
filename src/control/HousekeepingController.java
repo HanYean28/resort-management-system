@@ -79,6 +79,9 @@ public class HousekeepingController {
         if (room == null) {
             return "Room not found.";
         }
+        if (!rooms.contains(room)) {
+            return "Room not found.";
+        }
         if (room.getCleanlinessStatus().equals(STATUS_DIRTY)
                 || room.getCleanlinessStatus().equals(STATUS_CLEANING)
                 || room.getCleanlinessStatus().equals(STATUS_INSPECTED)) {
@@ -273,6 +276,7 @@ public class HousekeepingController {
     }
 
     private void appendTaskHistory(HousekeepingLog log) {
+        taskHistory.isFull();
         taskHistory.add(log);
         housekeepingLogDAO.appendLog(log);
     }
@@ -295,13 +299,12 @@ public class HousekeepingController {
 
     private void insertionSortRoomsByStatusThenNumber(ListInterface<Room> list) {
         for (int i = 2; i <= list.getNumberOfEntries(); i++) {
-            Room key = list.getEntry(i);
+            Room key = list.remove(i);
             int j = i - 1;
             while (j >= 1 && compareRoomsByStatusThenNumber(list.getEntry(j), key) > 0) {
-                list.replace(j + 1, list.getEntry(j));
                 j--;
             }
-            list.replace(j + 1, key);
+            list.add(j + 1, key);
         }
     }
 
@@ -324,13 +327,12 @@ public class HousekeepingController {
 
     private void insertionSortLogsByTimestamp(ListInterface<HousekeepingLog> list, boolean newestFirst) {
         for (int i = 2; i <= list.getNumberOfEntries(); i++) {
-            HousekeepingLog key = list.getEntry(i);
+            HousekeepingLog key = list.remove(i);
             int j = i - 1;
             while (j >= 1 && compareLogTimestamp(list.getEntry(j), key, newestFirst) > 0) {
-                list.replace(j + 1, list.getEntry(j));
                 j--;
             }
-            list.replace(j + 1, key);
+            list.add(j + 1, key);
         }
     }
 
