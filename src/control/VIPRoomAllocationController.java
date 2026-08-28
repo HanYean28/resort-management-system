@@ -28,7 +28,7 @@ import java.util.Map;
  *
  * @author Lim How Voon
  */
-public class VIPRoomAllocation {
+public class VIPRoomAllocationController {
 
     // -------------------------------------------------------
     // File paths
@@ -82,7 +82,7 @@ public class VIPRoomAllocation {
      * Initialises the controller and immediately loads
      * guests and rooms from their respective txt files.
      */
-    public VIPRoomAllocation() {
+    public VIPRoomAllocationController() {
         vipQueue           = new ArrayPriorityQueue();
         allRooms           = new ArrayList<>();
         allocationLog      = new ArrayList<>();

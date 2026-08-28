@@ -1,7 +1,7 @@
 package boundary;
 
 import adt.ListInterface;
-import control.FrontDeskService;
+import control.FrontDeskServiceController;
 import entity.BillingRecord;
 import entity.Guest;
 import entity.Room;
@@ -12,11 +12,11 @@ import utility.UIUtils;
  * @author Lim How Voon
  */
 public class FrontDeskUI {
-    private FrontDeskService service;
+    private FrontDeskServiceController service;
     private Scanner scanner;
 
     public FrontDeskUI(Scanner scanner) {
-        service = new FrontDeskService();
+        service = new FrontDeskServiceController();
         this.scanner = scanner;
     }
 

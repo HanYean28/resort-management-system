@@ -251,7 +251,7 @@ public class BookingUI {
         // Exactly ONE guest is allocated per click.
         // VIP gets the click first whenever a Pending VIP booking exists.
         if (result.isVIPAllocated()) {
-            control.VIPRoomAllocation.AllocationResult vip = result.getVIPResult();
+            control.VIPRoomAllocationController.AllocationResult vip = result.getVIPResult();
             Guest guest = vip.getGuest();
             Room room = vip.getRoom();
 

@@ -1,6 +1,6 @@
 package boundary;
 
-import control.VIPRoomAllocation;
+import control.VIPRoomAllocationController;
 import entity.Guest;
 import utility.UIUtils;
 
@@ -52,11 +52,11 @@ public class VIPRoomAllocationUI {
         TIER_RATES.put("SILVER",    399.00);
     }
 
-    private final VIPRoomAllocation ctrl;
+    private final VIPRoomAllocationController ctrl;
     private final Scanner           scanner;
 
     public VIPRoomAllocationUI(Scanner scanner) {
-        this.ctrl    = new VIPRoomAllocation();
+        this.ctrl    = new VIPRoomAllocationController();
         this.scanner = scanner;
     }
 

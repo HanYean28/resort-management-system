@@ -42,8 +42,8 @@ public class BookingController {
 
     private ListInterface<BookingRequest>  bookings;
     private QueueInterface<BookingRequest> pendingQueue;
-    private VIPRoomAllocation              vipAllocation;
-    private FrontDeskService               frontDeskService;
+    private VIPRoomAllocationController              vipAllocation;
+    private FrontDeskServiceController               frontDeskService;
     private BookingDAO                     bookingDAO;
     private RoomDAO                        roomDAO;
     private BillingDAO                     billingDAO;
@@ -55,8 +55,8 @@ public class BookingController {
     public BookingController() {
         bookings         = new ArrayList<>();
         pendingQueue     = new ArrayQueue<>();
-        vipAllocation    = new VIPRoomAllocation();
-        frontDeskService = new FrontDeskService();
+        vipAllocation    = new VIPRoomAllocationController();
+        frontDeskService = new FrontDeskServiceController();
         bookingDAO       = new BookingDAO();
         roomDAO          = new RoomDAO();
         billingDAO       = new BillingDAO();
@@ -193,7 +193,7 @@ public class BookingController {
          * VIPRoomAllocation owns that priority logic.
          */
         if (vipAllocation.hasPendingVipBooking()) {
-            VIPRoomAllocation.AllocationResult vipResult =
+            VIPRoomAllocationController.AllocationResult vipResult =
                     vipAllocation.allocateNextPendingBooking();
 
             if (vipResult != null && vipResult.isSuccess()) {
@@ -895,10 +895,10 @@ public class BookingController {
         private final BookingRequest booking;
         private final ListInterface<Room> availableRooms;
         private final String message;
-        private final VIPRoomAllocation.AllocationResult vipResult;
+        private final VIPRoomAllocationController.AllocationResult vipResult;
 
         private AssignResult(Kind k, BookingRequest b, ListInterface<Room> rooms,
-                String msg, VIPRoomAllocation.AllocationResult vipResult) {
+                String msg, VIPRoomAllocationController.AllocationResult vipResult) {
             kind = k;
             booking = b;
             availableRooms = rooms;
@@ -926,7 +926,7 @@ public class BookingController {
         }
 
         public static AssignResult vipAllocated(
-                VIPRoomAllocation.AllocationResult vipResult) {
+                VIPRoomAllocationController.AllocationResult vipResult) {
             return new AssignResult(Kind.VIP_ALLOCATED, null, null,
                     null, vipResult);
         }
@@ -945,7 +945,7 @@ public class BookingController {
         public BookingRequest getBooking() { return booking; }
         public ListInterface<Room> getAvailableRooms() { return availableRooms; }
         public String getMessage() { return message; }
-        public VIPRoomAllocation.AllocationResult getVIPResult() { return vipResult; }
+        public VIPRoomAllocationController.AllocationResult getVIPResult() { return vipResult; }
     }
 
     public static class RoomTypeDemandRow {

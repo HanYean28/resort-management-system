@@ -24,14 +24,14 @@ import java.util.Iterator;
  * @author Lim How Voon
  */
 
-public class FrontDeskService {
+public class FrontDeskServiceController {
     private BinarySearchTreeInterface<Guest> guestTree;
     private GuestDAO guestDAO;
     private RoomDAO roomDAO;
     private BookingDAO bookingDAO;
     private BillingDAO billingDAO;
 
-    public FrontDeskService() {
+    public FrontDeskServiceController() {
         guestTree = new BinarySearchTree<>();
         guestDAO = new GuestDAO();
         roomDAO = new RoomDAO();
