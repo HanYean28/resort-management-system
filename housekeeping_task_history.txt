@@ -1,10 +1,9 @@
-# roomNumber|oldStatus|newStatus|timestamp
-101|Ready|Dirty|2026-08-14 21:07:54
-101|Dirty|Ready|2026-08-14 21:09:02
-101|Ready|Dirty|2026-08-14 21:13:32
-101|Dirty|Cleaning In Progress|2026-08-14 21:13:49
-101|Cleaning In Progress|Inspected|2026-08-14 21:14:04
-101|Inspected|Ready|2026-08-15 12:26:32
-102|Ready|Dirty|2026-08-15 15:03:22
-104|Ready|Dirty|2026-08-23 14:18:42
-101|Dirty|Cleaning In Progress|2026-08-23 14:19:06
+# roomNumber|oldStatus|newStatus|timestamp|action
+101|Ready|Dirty|2026-08-28 09:00:00|Update
+101|Dirty|Cleaning In Progress|2026-08-28 09:30:00|Update
+102|Ready|Dirty|2026-08-28 10:00:00|Update
+103|Ready|Dirty|2026-08-28 09:45:00|Update
+103|Dirty|Cleaning In Progress|2026-08-28 10:10:00|Update
+103|Cleaning In Progress|Inspected|2026-08-28 10:30:00|Update
+104|Ready|Dirty|2026-08-27 15:00:00|Update
+104|Dirty|Ready|2026-08-27 15:05:00|Rollback

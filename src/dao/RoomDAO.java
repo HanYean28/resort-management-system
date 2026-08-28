@@ -30,11 +30,24 @@ public class RoomDAO {
 
                 String[] parts = line.split("\\|");
                 if (parts.length == 7) {
-                    rooms.add(new Room(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6]));
+                    String roomNumber = parts[0].trim();
+                    String roomType = parts[1].trim();
+                    String cleanlinessStatus = parts[2].trim();
+                    String occupancyStatus = parts[3].trim();
+                    String lastUpdate = parts[4].trim();
+                    String dirtySince = parts[5].trim();
+                    String lastTurnaroundMinutes = parts[6].trim();
+
+                    if (isValidRoom(roomNumber, roomType, cleanlinessStatus, occupancyStatus,
+                            lastUpdate, dirtySince, lastTurnaroundMinutes)
+                            && !roomNumberExists(rooms, roomNumber)) {
+                        rooms.add(new Room(roomNumber, roomType, cleanlinessStatus, occupancyStatus,
+                                lastUpdate, dirtySince, lastTurnaroundMinutes));
+                    }
                 }
             }
         } catch (IOException e) {
-            // Return empty list if file is missing.
+            createFileIfMissing();
         }
         return rooms;
     }
@@ -54,5 +67,47 @@ public class RoomDAO {
         } catch (IOException e) {
             // Keep console flow simple; failed saves are ignored in this prototype.
         }
+    }
+
+    private boolean isValidRoom(String roomNumber, String roomType, String cleanlinessStatus, String occupancyStatus,
+            String lastUpdate, String dirtySince, String lastTurnaroundMinutes) {
+        return !roomNumber.isEmpty()
+                && isValidRoomType(roomType)
+                && isValidCleanlinessStatus(cleanlinessStatus)
+                && isValidOccupancyStatus(occupancyStatus)
+                && !lastUpdate.isEmpty()
+                && !dirtySince.isEmpty()
+                && !lastTurnaroundMinutes.isEmpty();
+    }
+
+    private boolean roomNumberExists(ListInterface<Room> rooms, String roomNumber) {
+        for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
+            if (rooms.getEntry(i).getRoomNumber().equalsIgnoreCase(roomNumber)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isValidRoomType(String roomType) {
+        return roomType.equalsIgnoreCase("Standard")
+                || roomType.equalsIgnoreCase("Deluxe")
+                || roomType.equalsIgnoreCase("Suite");
+    }
+
+    private boolean isValidCleanlinessStatus(String status) {
+        return status.equalsIgnoreCase("Dirty")
+                || status.equalsIgnoreCase("Cleaning In Progress")
+                || status.equalsIgnoreCase("Inspected")
+                || status.equalsIgnoreCase("Ready");
+    }
+
+    private boolean isValidOccupancyStatus(String status) {
+        return status.equalsIgnoreCase("Vacant")
+                || status.equalsIgnoreCase("Occupied");
+    }
+
+    private void createFileIfMissing() {
+        saveRooms(new ArrayList<Room>());
     }
 }

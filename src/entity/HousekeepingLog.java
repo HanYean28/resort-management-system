@@ -9,6 +9,7 @@ import java.io.Serializable;
 public class HousekeepingLog implements Serializable {
     public static final String ACTION_UPDATE = "Update";
     public static final String ACTION_ROLLBACK = "Rollback";
+    public static final String ACTION_LATE_CHECKOUT = "Late Checkout";
 
     private String roomNumber;
     private String oldStatus;
