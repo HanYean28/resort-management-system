@@ -35,14 +35,15 @@ public class VIPRoomAllocationUI {
             System.out.println(" [3] Create Booking");
             System.out.println(" [4] Cancel Booking");
             System.out.println(" [5] View Priority Queue");
-            System.out.println(" [6] Generate Report");
+            System.out.println(" [6] Peek Next VIP Guest");
+            System.out.println(" [7] Generate Report");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-6): ");
+            System.out.print("Please enter choice (0-7): ");
 
-            Integer selected = readIntOption(0, 6);
+            Integer selected = readIntOption(0, 7);
             if (selected == null) {
-                UIUtils.printError("Invalid input! Please enter a number between 0 and 6.");
+                UIUtils.printError("Invalid input! Please enter a number between 0 and 7.");
                 UIUtils.pressEnterToContinue(scanner);
                 continue;
             }
@@ -54,7 +55,8 @@ public class VIPRoomAllocationUI {
                 case 3: handleCreateBooking(); break;
                 case 4: handleCancelBooking(); break;
                 case 5: handleViewQueue(); break;
-                case 6: handleReport(); break;
+                case 6: handlePeekNextGuest(); break;
+                case 7: handleReport(); break;
                 case 0:
                     UIUtils.clearScreen();
                     System.out.println("Returning to Main Menu...");
@@ -286,8 +288,19 @@ public class VIPRoomAllocationUI {
             return;
         }
 
+        // Demonstrate the Priority Queue ADT peek operation without removing
+        // the guest from the heap. This is display-only; allocation decisions
+        // still remain inside VIPRoomAllocationController.
+        Guest peekedGuest = ctrl.peekNextGuest();
+
         System.out.println("Priority: Diamond > Elite > Platinum > Gold > Silver");
-        System.out.println("Same-tier bookings keep their existing booking order.\n");
+        System.out.println("Same-tier bookings keep their existing booking order.");
+        if (peekedGuest != null) {
+            System.out.println("Heap Front (peek) : " + peekedGuest.getName()
+                    + " [" + peekedGuest.getLoyaltyTier() + "]"
+                    + " (Conf# " + peekedGuest.getConfirmationNo() + ")");
+        }
+        System.out.println();
         System.out.printf("%-7s | %-12s | %-20s | %-10s | %-10s | %-10s | %-11s | %s%n",
                 "Booking", "Conf#", "Guest Name", "Tier", "Room Type",
                 "Check-In", "Check-Out", "Status");
@@ -310,7 +323,33 @@ public class VIPRoomAllocationUI {
     }
 
     // ------------------------------------------------------------------
-    // 6. Reports
+    // 6. Peek Next VIP Guest
+    // ------------------------------------------------------------------
+
+    private void handlePeekNextGuest() {
+        UIUtils.clearScreen();
+        UIUtils.printHeader("PEEK NEXT VIP GUEST");
+
+        Guest guest = ctrl.peekNextGuest();
+
+        if (guest == null) {
+            System.out.println("VIP priority queue is empty.");
+            return;
+        }
+
+        System.out.println("Highest-priority VIP currently at the front:");
+        UIUtils.printSectionLine();
+        System.out.println("Confirmation No : " + guest.getConfirmationNo());
+        System.out.println("Guest Name      : " + guest.getName());
+        System.out.println("Phone           : " + guest.getPhone());
+        System.out.println("Loyalty Tier    : " + guest.getLoyaltyTier());
+        UIUtils.printSectionLine();
+        System.out.println("Guest was NOT removed from the priority queue.");
+        System.out.println("Queue Size      : " + ctrl.getQueueSize());
+    }
+
+    // ------------------------------------------------------------------
+    // 7. Reports
     // ------------------------------------------------------------------
 
     private void handleReport() {
