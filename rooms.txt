@@ -8,6 +8,6 @@
 107|Deluxe|Ready|Vacant|N/A|N/A|N/A
 108|Suite|Ready|Occupied|2026-08-29 09:00:00|N/A|N/A
 109|Standard|Ready|Vacant|N/A|N/A|N/A
-110|Deluxe|Ready|Vacant|N/A|N/A|N/A
+110|Deluxe|Dirty|Vacant|2026-08-29 13:15:00|2026-08-29 13:15:00|N/A
 111|Suite|Ready|Vacant|N/A|N/A|N/A
 112|Standard|Ready|Vacant|N/A|N/A|N/A
