@@ -1,62 +1,43 @@
 package adt;
-//hi
-/**
- * An interface for a custom Priority Queue ADT.
- * 
- * @author Frank M. Carrano
- * @version 2.0
- * @param <T> The type of elements held in this priority queue, must be
- *            Comparable.
- */
-public interface PriorityQueueInterface<T extends Comparable<? super T>> {
 
-    /**
-     * Adds a new entry to this priority queue.
-     * 
-     * @param newEntry An object to be added.
-     */
+/**
+ * Generic Priority Queue ADT.
+ *
+ * The ADT stores entries by priority. The implementation decides how
+ * priorities are compared and how entries are physically stored.
+ *
+ * @author Kaizen Soh
+ * @param <T> element type stored in the priority queue
+ */
+public interface PriorityQueueInterface<T> {
+
+    /** Adds a new entry according to its priority. */
     void add(T newEntry);
 
-    /**
-     * Removes and returns the entry with the highest priority.
-     * 
-     * @return Either the object with the highest priority or, if the priority queue
-     *         was empty, null.
-     */
+    /** Removes and returns the highest-priority entry, or null if empty. */
     T remove();
 
-    /**
-     * Retrieves the entry with the highest priority.
-     * 
-     * @return Either the object with the highest priority or, if the priority queue
-     *         was empty, null.
-     */
+    /** Returns the highest-priority entry without removing it, or null if empty. */
     T peek();
 
+    /** Removes a specified entry while preserving priority-queue order. */
+    boolean remove(T entry);
+
     /**
-     * Detects whether this priority queue is empty.
-     * 
-     * @return True if the priority queue is empty, or false otherwise.
+     * Copies all entries into the supplied array in descending priority order
+     * without modifying the real priority queue.
      */
+    T[] toSortedArray(T[] result);
+
+    /** Returns true when the priority queue contains no entries. */
     boolean isEmpty();
 
-    /**
-     * Gets the size of this priority queue.
-     * 
-     * @return The number of elements currently in the queue.
-     */
+    /** Returns the current number of entries. */
     int size();
 
-    /**
-     * Removes all entries from this priority queue.
-     */
+    /** Removes all entries. */
     void clear();
 
-    /**
-     * Detects whether this priority queue is full.
-     * 
-     * @return True if the priority queue is full, or false otherwise.
-     */
+    /** Returns true only if no more entries can be inserted. */
     boolean isFull();
-
 }
