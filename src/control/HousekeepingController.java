@@ -106,7 +106,8 @@ public class HousekeepingController {
             Room room = rooms.getEntry(i);
             if (isActiveTask(room)
                     && room.getOccupancyStatus().equalsIgnoreCase("Vacant")
-                    && isUpdatedToday(room)) {
+                    && isUpdatedToday(room)
+                    && hasRollbackPathToReady(room.getRoomNumber())) {
                 lateCheckoutTasks.add(room);
             }
         }
@@ -208,14 +209,21 @@ public class HousekeepingController {
         }
 
         String oldStatus = room.getCleanlinessStatus();
-        String restoredStatus = STATUS_READY;
+        String restoredStatus = null;
+        boolean restoredToReady = false;
         RoomRollbackEntry entry = findRollbackEntry(room.getRoomNumber());
+        // using stack to restore status
         while (entry != null && !entry.getStack().isEmpty()) {
             HousekeepingLog lastLog = entry.getStack().pop();
             restoredStatus = lastLog.getOldStatus();
             if (restoredStatus.equals(STATUS_READY)) {
+                restoredToReady = true;
                 break;
             }
+        }
+
+        if (!restoredToReady) {
+            return "No rollback path to Ready found for this room.";
         }
 
         String timestamp = getCurrentTimestamp();
@@ -225,7 +233,7 @@ public class HousekeepingController {
         if (restoredStatus.equals(STATUS_READY)) {
             room.setDirtySince("N/A");
         }
-
+        // save late checkout action 
         HousekeepingLog log = new HousekeepingLog(room.getRoomNumber(), oldStatus, restoredStatus, timestamp,
                 HousekeepingLog.ACTION_LATE_CHECKOUT);
         appendTaskHistory(log);
@@ -322,9 +330,25 @@ public class HousekeepingController {
 
     private void loadTaskHistoryFromFile() {
         taskHistory.clear();
+        roomRollbackStacks.clear();
         ListInterface<HousekeepingLog> loadedLogs = housekeepingLogDAO.loadLogs();
         for (int i = 1; i <= loadedLogs.getNumberOfEntries(); i++) {
-            taskHistory.add(loadedLogs.getEntry(i));
+            HousekeepingLog log = loadedLogs.getEntry(i);
+            taskHistory.add(log);
+            rebuildRollbackStack(log);
+        }
+    }
+
+    private void rebuildRollbackStack(HousekeepingLog log) {
+        if (log.getAction().equals(HousekeepingLog.ACTION_UPDATE)) {
+            pushRollbackLog(log.getRoomNumber(), log);
+        } else if (log.getAction().equals(HousekeepingLog.ACTION_ROLLBACK)) {
+            RoomRollbackEntry entry = findRollbackEntry(log.getRoomNumber());
+            if (entry != null && !entry.getStack().isEmpty()) {
+                entry.getStack().pop();
+            }
+        } else if (log.getAction().equals(HousekeepingLog.ACTION_LATE_CHECKOUT)) {
+            clearRollbackStack(log.getRoomNumber());
         }
     }
 
@@ -442,6 +466,29 @@ public class HousekeepingController {
         if (entry != null) {
             entry.getStack().clear();
         }
+    }
+
+    private boolean hasRollbackPathToReady(String roomNumber) {
+        RoomRollbackEntry entry = findRollbackEntry(roomNumber);
+        if (entry == null || entry.getStack().isEmpty()) {
+            return false;
+        }
+
+        boolean foundReady = false;
+        StackInterface<HousekeepingLog> tempStack = new ArrayStack<>();
+        while (!entry.getStack().isEmpty()) {
+            HousekeepingLog log = entry.getStack().pop();
+            tempStack.push(log);
+            if (log.getOldStatus().equals(STATUS_READY)) {
+                foundReady = true;
+                break;
+            }
+        }
+
+        while (!tempStack.isEmpty()) {
+            entry.getStack().push(tempStack.pop());
+        }
+        return foundReady;
     }
 
     private String getCurrentTimestamp() {

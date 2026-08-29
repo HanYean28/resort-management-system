@@ -10,3 +10,4 @@
 106|Ready|Dirty|2026-08-29 11:15:00|Update
 102|Dirty|Ready|2026-08-29 12:00:00|Late Checkout
 102|Ready|Dirty|2026-08-29 12:20:00|Update
+101|Cleaning In Progress|Ready|2026-08-29 12:56:20|Late Checkout
