@@ -277,8 +277,6 @@ public class FrontDeskServiceController {
      * Display-friendly room label for guest overview / detail screens:
      * plain room number when the guest is Checked In, "<room> (Reserved)"
      * when a room is Assigned but the guest hasn't arrived yet, or "N/A"
-     * if neither. Use getGuestCurrentRoom() instead when you need the
-     * bare room number (e.g. to look up room type).
      */
     public String getGuestRoomStatusLabel(String confirmationNo) {
         ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
@@ -363,7 +361,7 @@ public class FrontDeskServiceController {
      * Returns every billing record for a given guest (all stays, not just
      * the current one), sorted with the most recent (by createdAt) first.
      * Used by the guest detail view so front desk can see full billing
-     * history — including any unpaid bills from past stays — in one look.
+     * history — including any unpaid bills from past stays
      */
     public ListInterface<BillingRecord> getBillingHistoryByConfirmationNo(String confirmationNo) {
         ListInterface<BillingRecord> allBills = loadBillingFromFile();
@@ -407,8 +405,6 @@ public class FrontDeskServiceController {
     }
 
     /**
-     * Returns the most relevant booking status for a guest, so the UI can
-     * show it alongside room info (e.g. explain why Room No is N/A —
      * Pending means no room decided yet, vs simply no booking at all).
      * If a guest has multiple bookings (e.g. a past stay plus a new one),
      * active statuses are preferred over closed ones, and the most
