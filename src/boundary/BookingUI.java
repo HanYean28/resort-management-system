@@ -268,6 +268,62 @@ public class BookingUI {
             return;
         }
 
+        // Requested VIP room type is unavailable, but other date-safe rooms exist.
+        // Keep serving this SAME highest-priority VIP instead of skipping the queue.
+        if (result.isVIPManualNeeded()) {
+            control.VIPRoomAllocationController.AllocationResult vip = result.getVIPResult();
+            Guest guest = vip.getGuest();
+
+            System.out.println();
+            UIUtils.printError(result.getMessage());
+            System.out.println("Guest Name         : " + guest.getName());
+            System.out.println("Loyalty Tier       : " + guest.getLoyaltyTier());
+            System.out.println("Requested Room Type: "
+                    + controller.getVIPRequestedRoomType(guest.getConfirmationNo()));
+            System.out.println();
+            System.out.println("Other available rooms for this guest's booking dates:");
+            UIUtils.printSectionLine();
+
+            ListInterface<Room> alternatives = result.getAvailableRooms();
+            printRoomTable(alternatives);
+
+            System.out.print("Select room [1-" + alternatives.getNumberOfEntries()
+                    + "] (0 to keep booking Pending): ");
+            int sel = readIntRaw();
+
+            if (sel == 0) {
+                System.out.println("Booking remains Pending. No Standard guest was allocated.");
+                return;
+            }
+
+            if (sel < 1 || sel > alternatives.getNumberOfEntries()) {
+                UIUtils.printError("Invalid selection. Booking remains Pending.");
+                return;
+            }
+
+            Room chosen = alternatives.getEntry(sel);
+            control.VIPRoomAllocationController.AllocationResult manual =
+                    controller.assignAlternativeRoomToVip(
+                            guest.getConfirmationNo(), chosen.getRoomNumber());
+
+            if (manual != null && manual.isSuccess()) {
+                System.out.println();
+                System.out.println("VIP alternative room assigned successfully:");
+                UIUtils.printSectionLine();
+                System.out.println("Guest Name : " + guest.getName());
+                System.out.println("Tier       : " + guest.getLoyaltyTier());
+                System.out.println("Room       : " + chosen.getRoomNumber()
+                        + " (" + chosen.getRoomType() + ")");
+                UIUtils.printSectionLine();
+                System.out.println("One VIP booking assigned successfully.");
+            } else {
+                UIUtils.printError(manual == null
+                        ? "VIP room assignment could not be completed."
+                        : manual.getMessage());
+            }
+            return;
+        }
+
         // A Pending VIP exists but cannot currently be allocated.
         // Do not skip it and allocate a Standard booking in the same click.
         if (result.isVIPBlocked()) {

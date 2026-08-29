@@ -190,10 +190,16 @@ public class BookingController {
                     vipAllocation.allocateNextPendingBooking();
 
             if (vipResult != null && vipResult.isSuccess()) {
-                // VIPRoomAllocation updated the shared bookings.txt file.
+                // VIP controller updated the shared bookings.txt file.
                 loadBookingsFromFile();
                 rebuildPendingQueue();
                 return AssignResult.vipAllocated(vipResult);
+            }
+
+            if (vipResult != null && vipResult.isManualNeeded()) {
+                // Keep serving the same highest-priority VIP. The UI may let staff
+                // choose one of the alternative rooms returned by the VIP controller.
+                return AssignResult.vipManualNeeded(vipResult);
             }
 
             String message = vipResult == null
@@ -228,6 +234,33 @@ public class BookingController {
         return AssignResult.manualNeeded(nextBooking, allAvailable,
                 "No '" + nextBooking.getRequestedRoomType()
                 + "' room available. Please select from the rooms below:");
+    }
+
+    /**
+     * Manually assigns an alternative room to the SAME VIP guest currently being
+     * served. VIP-specific validation and booking updates remain inside the VIP
+     * controller.
+     */
+    public String getVIPRequestedRoomType(String confirmationNo) {
+        return vipAllocation.getRequestedRoomTypeForPendingBooking(confirmationNo);
+    }
+
+    public VIPRoomAllocationController.AllocationResult assignAlternativeRoomToVip(
+            String confirmationNo, String roomNumber) {
+        Guest guest = vipAllocation.findGuestInQueue(confirmationNo);
+        if (guest == null) {
+            return VIPRoomAllocationController.AllocationResult.failure(
+                    "VIP guest is no longer available in the priority queue.");
+        }
+
+        VIPRoomAllocationController.AllocationResult result =
+                vipAllocation.allocateRoom(guest, roomNumber);
+
+        if (result != null && result.isSuccess()) {
+            loadBookingsFromFile();
+            rebuildPendingQueue();
+        }
+        return result;
     }
 
     public String assignRoomToBookingForGuest(String confirmationNo, String roomNumber) {
@@ -909,7 +942,7 @@ public class BookingController {
     public static class AssignResult {
         public enum Kind {
             SUCCESS, MANUAL_NEEDED, EMPTY_QUEUE, NO_ROOMS,
-            VIP_ALLOCATED, VIP_BLOCKED
+            VIP_ALLOCATED, VIP_MANUAL_NEEDED, VIP_BLOCKED
         }
 
         private final Kind kind;
@@ -952,6 +985,12 @@ public class BookingController {
                     null, vipResult);
         }
 
+        public static AssignResult vipManualNeeded(
+                VIPRoomAllocationController.AllocationResult vipResult) {
+            return new AssignResult(Kind.VIP_MANUAL_NEEDED, null,
+                    vipResult.getAvailableRooms(), vipResult.getMessage(), vipResult);
+        }
+
         public static AssignResult vipBlocked(String msg) {
             return new AssignResult(Kind.VIP_BLOCKED, null, null, msg, null);
         }
@@ -960,8 +999,9 @@ public class BookingController {
         public boolean isManualNeeded() { return kind == Kind.MANUAL_NEEDED; }
         public boolean isEmptyQueue()   { return kind == Kind.EMPTY_QUEUE; }
         public boolean isNoRooms()      { return kind == Kind.NO_ROOMS; }
-        public boolean isVIPAllocated() { return kind == Kind.VIP_ALLOCATED; }
-        public boolean isVIPBlocked()   { return kind == Kind.VIP_BLOCKED; }
+        public boolean isVIPAllocated()    { return kind == Kind.VIP_ALLOCATED; }
+        public boolean isVIPManualNeeded() { return kind == Kind.VIP_MANUAL_NEEDED; }
+        public boolean isVIPBlocked()      { return kind == Kind.VIP_BLOCKED; }
 
         public BookingRequest getBooking() { return booking; }
         public ListInterface<Room> getAvailableRooms() { return availableRooms; }

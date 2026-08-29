@@ -1,861 +1,436 @@
 package control;
 
+import adt.ArrayList;
 import adt.ArrayPriorityQueue;
+import adt.ListInterface;
+import adt.PriorityQueueInterface;
 import entity.Guest;
 import entity.Room;
-
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
 import utility.DateUtils;
 
 /**
  * Controller for Module 2 — VIP & Loyalty Tier Priority Room Allocation.
  *
- * Reads from and writes to:
- *   guests.txt   — confirmationNo|name|phone|loyaltyTier
- *   rooms.txt    — roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
- *   bookings.txt — bookingId|confirmationNo|bookingType|requestedRoomType|checkInDate|checkOutDate|status|assignedRoomNumber|createdAt
+ * All VIP business rules, file processing, report filtering/searching and
+ * explicit sorting are kept in this control class. The boundary class only
+ * collects input and displays returned results.
  *
- * @author Kaizen Soh
+ * No Java Collections Framework collection interfaces/classes are used here.
+ * Custom ListInterface/ArrayList and PriorityQueueInterface are used instead.
+ *
+ * @author Lim How Voon
  */
 public class VIPRoomAllocationController {
 
-    // -------------------------------------------------------
-    // File paths
-    // -------------------------------------------------------
-
-    private static final String GUESTS_FILE   = "guests.txt";
-    private static final String ROOMS_FILE    = "rooms.txt";
+    private static final String GUESTS_FILE = "guests.txt";
+    private static final String ROOMS_FILE = "rooms.txt";
     private static final String BOOKINGS_FILE = "bookings.txt";
-    private static final String BILLING_FILE  = "billing.txt";
+    private static final String BILLING_FILE = "billing.txt";
 
-    // Nightly rates per loyalty tier.
-    private static final Map<String, Double> TIER_RATES = new HashMap<>();
-    static {
-        TIER_RATES.put("DIAMOND",  1099.00);
-        TIER_RATES.put("ELITE",     899.00);
-        TIER_RATES.put("PLATINUM",  699.00);
-        TIER_RATES.put("GOLD",      599.00);
-        TIER_RATES.put("SILVER",    399.00);
-    }
+    public static final String STATUS_PENDING = "Pending";
+    public static final String STATUS_ASSIGNED = "Assigned";
+    public static final String STATUS_CHECKED_IN = "Checked In";
+    public static final String STATUS_CHECKED_OUT = "Checked Out";
+    public static final String STATUS_CANCELLED = "Cancelled";
 
-    // -------------------------------------------------------
-    // Fields
-    // -------------------------------------------------------
+    /** Non-linear VIP collection ADT, implemented using a BinaryHeap. */
+    private final PriorityQueueInterface<Guest> vipQueue;
+    private final ListInterface<Room> allRooms;
+    private final ListInterface<String> allocationLog;
 
-    /** Priority queue — highest-tier guest always at the front. */
-    private ArrayPriorityQueue vipQueue;
-
-    /** All rooms loaded from rooms.txt (full list, not just available). */
-    private List<Room> allRooms;
-
-    /** Record of every (guest, room) pair that has been assigned. */
-    private List<String> allocationLog;
-
-    /** Maps confirmationNo → requested room type for each VIP guest. */
-    private Map<String, String> requestedRoomTypes;
-
-    /** Maps confirmationNo → check-in date (yyyy-MM-dd). */
-    private Map<String, String> checkInDates;
-
-    /** Maps confirmationNo → check-out date (yyyy-MM-dd). */
-    private Map<String, String> checkOutDates;
-
-    // -------------------------------------------------------
-    // Constructor
-    // -------------------------------------------------------
-
-    /**
-     * Initialises the controller and immediately loads
-     * guests and rooms from their respective txt files.
-     */
     public VIPRoomAllocationController() {
-        vipQueue           = new ArrayPriorityQueue();
-        allRooms           = new ArrayList<>();
-        allocationLog      = new ArrayList<>();
-        requestedRoomTypes = new HashMap<>();
-        checkInDates       = new HashMap<>();
-        checkOutDates      = new HashMap<>();
-
+        vipQueue = new ArrayPriorityQueue<>((a, b) ->
+                tierScore(a.getLoyaltyTier()) - tierScore(b.getLoyaltyTier()));
+        allRooms = new ArrayList<>();
+        allocationLog = new ArrayList<>();
         loadGuestsFromFile();
         loadRoomsFromFile();
     }
 
-    // -------------------------------------------------------
-    // File loaders
-    // -------------------------------------------------------
+    // ------------------------------------------------------------------
+    // File loading / persistence
+    // ------------------------------------------------------------------
 
-    /**
-     * Reads guests.txt and adds all VIP guests (tier != NONE)
-     * to the priority queue.
-     *
-     * File format (4 fields):
-     *   confirmationNo|name|phone|loyaltyTier
-     *
-     * Skips duplicate confirmation numbers already in the queue.
-     * Normalises loyalty tier to title case (e.g. "PLAtinum" → "Platinum").
-     */
     private void loadGuestsFromFile() {
-
+        vipQueue.clear();
         try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
-
             String line;
-
             while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length < 4) continue;
 
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-
-                if (parts.length < 4) {
-                    continue;
-                }
+                String tier = normaliseTier(parts[3].trim());
+                if ("None".equalsIgnoreCase(tier)) continue;
 
                 String confirmationNo = parts[0].trim();
-                String name           = parts[1].trim();
-                String phone          = parts[2].trim();
-                String loyaltyTier    = normaliseTier(parts[3].trim());
-
-                // Skip non-VIP guests.
-                if (loyaltyTier.equalsIgnoreCase("NONE")) {
-                    continue;
+                if (findGuestInQueue(confirmationNo) == null) {
+                    vipQueue.add(new Guest(
+                            confirmationNo,
+                            parts[1].trim(),
+                            parts[2].trim(),
+                            tier));
                 }
-
-                // Skip duplicates already in the queue.
-                if (vipQueue.find(confirmationNo) != null) {
-                    continue;
-                }
-
-                Guest guest = new Guest(confirmationNo, name, phone, loyaltyTier);
-                vipQueue.add(guest);
             }
-
-            System.out.println("[VIP] Guests loaded from " + GUESTS_FILE);
-
         } catch (IOException e) {
             System.out.println("[VIP] Could not read " + GUESTS_FILE + ": " + e.getMessage());
         }
     }
 
-    /**
-     * Reads rooms.txt and loads all rooms into allRooms.
-     *
-     * File format (7 fields):
-     *   roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
-     *
-     * Available rooms are those that are Vacant AND Ready.
-     */
     private void loadRoomsFromFile() {
-
         allRooms.clear();
-
         try (BufferedReader br = new BufferedReader(new FileReader(ROOMS_FILE))) {
-
             String line;
-
             while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length < 7) continue;
 
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-
-                if (parts.length < 7) {
-                    continue;
-                }
-
-                String roomNumber            = parts[0].trim();
-                String roomType              = parts[1].trim();
-                String cleanlinessStatus     = parts[2].trim();
-                String occupancyStatus       = parts[3].trim();
-                String lastUpdate            = parts[4].trim();
-                String dirtySince            = parts[5].trim();
-                String lastTurnaroundMinutes = parts[6].trim();
-
-                Room room = new Room(
-                        roomNumber,
-                        roomType,
-                        cleanlinessStatus,
-                        occupancyStatus,
-                        lastUpdate,
-                        dirtySince,
-                        lastTurnaroundMinutes
-                );
-
-                allRooms.add(room);
+                allRooms.add(new Room(
+                        parts[0].trim(), parts[1].trim(), parts[2].trim(),
+                        parts[3].trim(), parts[4].trim(), parts[5].trim(),
+                        parts[6].trim()));
             }
-
         } catch (IOException e) {
             System.out.println("[VIP] Could not read " + ROOMS_FILE + ": " + e.getMessage());
         }
     }
 
-    // -------------------------------------------------------
-    // File savers
-    // -------------------------------------------------------
-
-    /**
-     * Rewrites guests.txt with all guests currently in the queue
-     * plus any non-VIP guests that were skipped on load.
-     *
-     * Format: confirmationNo|name|phone|loyaltyTier
-     */
-    public void saveGuestsToFile() {
-
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(GUESTS_FILE))) {
-
-            bw.write("# confirmationNo|name|phone|loyaltyTier");
-            bw.newLine();
-
-            Guest[] all = vipQueue.getAll();
-
-            for (Guest g : all) {
-                if (g == null) continue;
-                bw.write(g.getConfirmationNo() + "|"
-                        + g.getName()          + "|"
-                        + g.getPhone()         + "|"
-                        + g.getLoyaltyTier());
-                bw.newLine();
-            }
-
-        } catch (IOException e) {
-            System.out.println("[VIP] Could not save " + GUESTS_FILE + ": " + e.getMessage());
-        }
-    }
-
-    /**
-     * Rewrites rooms.txt with the current in-memory room list.
-     *
-     * Format: roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes
-     */
-    public void saveRoomsToFile() {
-
+    private void saveRoomsToFile() {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(ROOMS_FILE))) {
-
             bw.write("# roomNumber|roomType|cleanlinessStatus|occupancyStatus|lastUpdate|dirtySince|lastTurnaroundMinutes");
             bw.newLine();
-
-            for (Room r : allRooms) {
-                if (r == null) continue;
-                bw.write(r.getRoomNumber()            + "|"
-                        + r.getRoomType()             + "|"
-                        + r.getCleanlinessStatus()    + "|"
-                        + r.getOccupancyStatus()      + "|"
-                        + r.getLastUpdate()           + "|"
-                        + r.getDirtySince()           + "|"
+            for (int i = 1; i <= allRooms.getNumberOfEntries(); i++) {
+                Room r = allRooms.getEntry(i);
+                bw.write(r.getRoomNumber() + "|"
+                        + r.getRoomType() + "|"
+                        + r.getCleanlinessStatus() + "|"
+                        + r.getOccupancyStatus() + "|"
+                        + r.getLastUpdate() + "|"
+                        + r.getDirtySince() + "|"
                         + r.getLastTurnaroundMinutes());
                 bw.newLine();
             }
-
         } catch (IOException e) {
             System.out.println("[VIP] Could not save " + ROOMS_FILE + ": " + e.getMessage());
         }
     }
 
-    /**
-     * Appends a new booking record to bookings.txt when a room
-     * is allocated to a VIP guest.
-     *
-     * Uses the stored checkInDate and checkOutDate for the guest.
-     */
-    private void saveBookingToFile(Guest guest, Room room) {
+    private void appendGuestToFile(Guest guest) {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(GUESTS_FILE, true))) {
+            bw.write(guest.getConfirmationNo() + "|"
+                    + guest.getName() + "|"
+                    + guest.getPhone() + "|"
+                    + guest.getLoyaltyTier());
+            bw.newLine();
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not save guest: " + e.getMessage());
+        }
+    }
 
-        String bookingId = null;
-        String checkIn = checkInDates.getOrDefault(guest.getConfirmationNo(), "N/A");
-        String checkOut = checkOutDates.getOrDefault(guest.getConfirmationNo(), "N/A");
-        List<String> lines = new ArrayList<>();
-        boolean updated = false;
+    /** Removes a registered guest record while preserving every other guest. */
+    private boolean removeGuestFromFile(String confirmationNo) {
+        ListInterface<String> lines = new ArrayList<>();
+        boolean found = false;
 
-        // A VIP booking is created as Pending first. Allocation must update that
-        // same booking to Assigned instead of creating a second booking record.
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
             String line;
             while ((line = br.readLine()) != null) {
                 String trimmed = line.trim();
-
-                if (!updated && !trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
                     String[] parts = trimmed.split("\\|", -1);
-
-                    if (parts.length >= 9
-                            && parts[1].trim().equalsIgnoreCase(guest.getConfirmationNo())
-                            && parts[2].trim().equalsIgnoreCase("VIP")
-                            && parts[6].trim().equalsIgnoreCase("Pending")) {
-
-                        bookingId = parts[0].trim();
-                        parts[6] = "Assigned";
-                        parts[7] = room.getRoomNumber();
-                        line = String.join("|", parts);
-                        updated = true;
+                    if (parts.length >= 1
+                            && parts[0].trim().equalsIgnoreCase(confirmationNo)) {
+                        found = true;
+                        continue;
                     }
                 }
-
                 lines.add(line);
             }
-        } catch (IOException ignored) {
-            // Fall back to creating an Assigned record below for old data/workflows.
-        }
-
-        if (updated) {
-            try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE))) {
-                for (String line : lines) {
-                    bw.write(line);
-                    bw.newLine();
-                }
-            } catch (IOException e) {
-                System.out.println("[VIP] Could not update " + BOOKINGS_FILE
-                        + ": " + e.getMessage());
-                return;
-            }
-        } else {
-            // Backward-compatible fallback if no Pending record exists.
-            bookingId = generateNextBookingId();
-            String createdAt = DateUtils.getCurrentTimestamp();
-
-            try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
-                bw.write(bookingId + "|"
-                        + guest.getConfirmationNo() + "|"
-                        + "VIP|"
-                        + room.getRoomType() + "|"
-                        + checkIn + "|"
-                        + checkOut + "|"
-                        + "Assigned|"
-                        + room.getRoomNumber() + "|"
-                        + createdAt);
-                bw.newLine();
-            } catch (IOException e) {
-                System.out.println("[VIP] Could not append to " + BOOKINGS_FILE
-                        + ": " + e.getMessage());
-                return;
-            }
-        }
-
-        // Generate billing only after the room has actually been assigned.
-        saveBillingToFile(guest, room, bookingId, checkIn, checkOut);
-    }
-
-    /**
-     * Appends a billing record to billing.txt.
-     *
-     * Calculates nights from checkIn/checkOut dates.
-     * Rate is determined by the guest's loyalty tier.
-     *
-     * File format:
-     *   billId|bookingId|confirmationNo|roomNumber|roomType
-     *   |checkInDate|checkOutDate|nights|amount|paymentStatus|createdAt
-     */
-    private void saveBillingToFile(Guest guest, Room room,
-            String bookingId, String checkIn, String checkOut) {
-
-        String billId    = generateNextBillId();
-        String createdAt = DateUtils.getCurrentTimestamp();
-
-        int nights = 1; // default if dates are invalid
-
-        try {
-            int computed = DateUtils.countNights(checkIn, checkOut);
-            if (computed > 0) nights = computed;
-        } catch (Exception ignored) {}
-
-        double rate   = TIER_RATES.getOrDefault(
-                guest.getLoyaltyTier().toUpperCase(), 399.00);
-        double amount = nights * rate;
-
-        try (BufferedWriter bw = new BufferedWriter(
-                new FileWriter(BILLING_FILE, true))) {
-
-            bw.write(billId                      + "|"
-                    + bookingId                   + "|"
-                    + guest.getConfirmationNo()   + "|"
-                    + room.getRoomNumber()         + "|"
-                    + room.getRoomType()           + "|"
-                    + checkIn                      + "|"
-                    + checkOut                     + "|"
-                    + nights                       + "|"
-                    + String.format("%.2f", amount) + "|"
-                    + "Paid"                       + "|"
-                    + createdAt);
-            bw.newLine();
-
         } catch (IOException e) {
-            System.out.println("[VIP] Could not append to " + BILLING_FILE
-                    + ": " + e.getMessage());
+            return false;
         }
-    }
 
-    /**
-     * Generates the next bill ID (BL####) by reading the highest
-     * existing BL-prefixed ID from billing.txt and incrementing it.
-     */
-    private String generateNextBillId() {
+        if (!found) return false;
 
-        int max = 0;
-
-        try (BufferedReader br = new BufferedReader(
-                new FileReader(BILLING_FILE))) {
-
-            String line;
-
-            while ((line = br.readLine()) != null) {
-
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-
-                if (parts.length > 0 && parts[0].matches("BL\\d{4}")) {
-                    try {
-                        int num = Integer.parseInt(parts[0].substring(2));
-                        if (num > max) max = num;
-                    } catch (NumberFormatException ignored) {}
-                }
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(GUESTS_FILE))) {
+            for (int i = 1; i <= lines.getNumberOfEntries(); i++) {
+                bw.write(lines.getEntry(i));
+                bw.newLine();
             }
-
-        } catch (IOException ignored) {}
-
-        int nextNumber = max + 1;
-        String billId = String.format("BL%04d", nextNumber);
-        while (idExistsInFile(BILLING_FILE, billId)) {
-            nextNumber++;
-            billId = String.format("BL%04d", nextNumber);
+            return true;
+        } catch (IOException e) {
+            return false;
         }
-        return billId;
     }
 
-    /**
-     * Generates the next booking ID by reading the highest existing
-     * B-prefixed ID from bookings.txt and incrementing it.
-     */
-    private String generateNextBookingId() {
+    // ------------------------------------------------------------------
+    // Guest / priority queue management
+    // ------------------------------------------------------------------
 
-        int max = 0;
-
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-
-            String line;
-
-            while ((line = br.readLine()) != null) {
-
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-
-                if (parts.length > 0 && parts[0].matches("B\\d{4}")) {
-                    try {
-                        int num = Integer.parseInt(parts[0].substring(1));
-                        if (num > max) max = num;
-                    } catch (NumberFormatException ignored) {}
-                }
-            }
-
-        } catch (IOException ignored) {}
-
-        int nextNumber = max + 1;
-        String bookingId = String.format("B%04d", nextNumber);
-        while (idExistsInFile(BOOKINGS_FILE, bookingId)) {
-            nextNumber++;
-            bookingId = String.format("B%04d", nextNumber);
-        }
-        return bookingId;
-    }
-
-    // -------------------------------------------------------
-    // Guest queue management
-    // -------------------------------------------------------
-
-    /**
-     * Adds a VIP guest to the priority queue and saves to guests.txt.
-     *
-     * @param guest the VIP guest to enqueue
-     * @throws IllegalArgumentException if guest is null
-     */
     public void addGuest(Guest guest) {
-
-        if (guest == null) {
-            throw new IllegalArgumentException("Guest cannot be null.");
+        if (guest == null) throw new IllegalArgumentException("Guest cannot be null.");
+        if (guest.getConfirmationNo() == null
+                || !guest.getConfirmationNo().matches("\\d{8}")) {
+            throw new IllegalArgumentException("Confirmation number must contain exactly 8 digits.");
+        }
+        if (findGuestByConfirmationNo(guest.getConfirmationNo()) != null) {
+            throw new IllegalArgumentException("Confirmation number already exists.");
         }
 
         vipQueue.add(guest);
-        saveGuestsToFile();
+        try {
+            appendGuestToFile(guest);
+        } catch (RuntimeException e) {
+            vipQueue.remove(guest);
+            throw e;
+        }
     }
 
-    /**
-     * Creates a Pending VIP booking for an existing VIP guest.
-     *
-     * The guest is NOT added to vipQueue again because the guest is already
-     * registered in the queue by addGuest(Guest). This method only stores the
-     * booking preferences and appends the Pending booking to bookings.txt.
-     *
-     * @return null when successful, otherwise an error message
-     */
+    public Guest peekNextGuest() {
+        return vipQueue.peek();
+    }
+
+    public Guest findGuestInQueue(String confirmationNo) {
+        if (confirmationNo == null) return null;
+        Guest[] guests = vipQueue.toSortedArray(new Guest[vipQueue.size()]);
+        for (Guest guest : guests) {
+            if (guest != null && confirmationNo.equals(guest.getConfirmationNo())) {
+                return guest;
+            }
+        }
+        return null;
+    }
+
+    /** Searches the persistent guest records, including already-assigned VIPs. */
+    public Guest findGuestByConfirmationNo(String confirmationNo) {
+        if (confirmationNo == null) return null;
+        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length >= 4
+                        && parts[0].trim().equalsIgnoreCase(confirmationNo)) {
+                    return new Guest(parts[0].trim(), parts[1].trim(), parts[2].trim(),
+                            normaliseTier(parts[3].trim()));
+                }
+            }
+        } catch (IOException ignored) { }
+        return null;
+    }
+
+    public boolean removeGuestFromQueue(String confirmationNo) {
+        Guest guest = findGuestInQueue(confirmationNo);
+        if (guest == null) return false;
+
+        // Do not delete a guest who still has an active booking.
+        if (hasActiveVipBooking(confirmationNo)) return false;
+
+        if (!vipQueue.remove(guest)) return false;
+        if (!removeGuestFromFile(confirmationNo)) {
+            vipQueue.add(guest);
+            return false;
+        }
+        return true;
+    }
+
+    public Guest[] getAllWaitingGuests() {
+        return vipQueue.toSortedArray(new Guest[vipQueue.size()]);
+    }
+
+    public int getQueueSize() {
+        return vipQueue.size();
+    }
+
+    public boolean isQueueEmpty() {
+        return vipQueue.isEmpty();
+    }
+
+    // ------------------------------------------------------------------
+    // Booking creation / cancellation
+    // ------------------------------------------------------------------
+
     public String createPendingVipBooking(Guest guest, String requestedRoomType,
             String checkInDate, String checkOutDate) {
-
-        if (guest == null) {
-            return "Guest cannot be null.";
-        }
-
+        if (guest == null) return "Guest cannot be null.";
         if (requestedRoomType == null || requestedRoomType.trim().isEmpty()
                 || checkInDate == null || checkInDate.trim().isEmpty()
                 || checkOutDate == null || checkOutDate.trim().isEmpty()) {
             return "Booking details cannot be empty.";
         }
-
-        // The current VIP design stores one set of booking preferences per guest,
-        // so prevent another active Pending/Assigned booking for the same guest.
         if (hasActiveVipBooking(guest.getConfirmationNo())) {
             return "Guest already has an active VIP booking.";
         }
 
-        requestedRoomTypes.put(guest.getConfirmationNo(), requestedRoomType.trim());
-        checkInDates.put(guest.getConfirmationNo(), checkInDate.trim());
-        checkOutDates.put(guest.getConfirmationNo(), checkOutDate.trim());
-
         String bookingId = generateNextBookingId();
-        String createdAt = DateUtils.getCurrentTimestamp();
-
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE, true))) {
-            bw.write(bookingId + "|"
-                    + guest.getConfirmationNo() + "|"
-                    + "VIP|"
-                    + requestedRoomType.trim() + "|"
-                    + checkInDate.trim() + "|"
-                    + checkOutDate.trim() + "|"
-                    + "Pending|"
-                    + "N/A|"
-                    + createdAt);
+            bw.write(bookingId + "|" + guest.getConfirmationNo() + "|VIP|"
+                    + requestedRoomType.trim() + "|" + checkInDate.trim() + "|"
+                    + checkOutDate.trim() + "|Pending|N/A|"
+                    + DateUtils.getCurrentTimestamp());
             bw.newLine();
+            return null;
         } catch (IOException e) {
             return "Could not save VIP booking: " + e.getMessage();
         }
-
-        return null;
     }
 
-    /** Returns true if the guest already has a Pending or Assigned VIP booking. */
     private boolean hasActiveVipBooking(String confirmationNo) {
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                String trimmed = line.trim();
-                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
-
-                String[] parts = trimmed.split("\\|", -1);
-                if (parts.length < 9) continue;
-
-                boolean sameGuest = parts[1].trim().equalsIgnoreCase(confirmationNo);
-                boolean vip = parts[2].trim().equalsIgnoreCase("VIP");
-                String status = parts[6].trim();
-                boolean active = status.equalsIgnoreCase("Pending")
-                        || status.equalsIgnoreCase("Assigned");
-
-                if (sameGuest && vip && active) return true;
+        String[][] rows = readAllVipBookings();
+        for (String[] row : rows) {
+            if (row[1].equalsIgnoreCase(confirmationNo)
+                    && (row[6].equalsIgnoreCase(STATUS_PENDING)
+                    || row[6].equalsIgnoreCase(STATUS_ASSIGNED))) {
+                return true;
             }
-        } catch (IOException ignored) {
-            // If the file does not exist yet, there is no active booking to block.
         }
         return false;
     }
 
-    /**
-     * Returns the check-in date for a given confirmation number.
-     */
+    /** Boundary-safe cancellation: only a Pending VIP booking can be cancelled. */
+    public boolean cancelPendingVipBooking(String bookingId) {
+        if (bookingId == null) return false;
+        ListInterface<String> lines = new ArrayList<>();
+        boolean changed = false;
+
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                    String[] parts = trimmed.split("\\|", -1);
+                    if (!changed && parts.length >= 9
+                            && parts[0].trim().equalsIgnoreCase(bookingId)
+                            && parts[2].trim().equalsIgnoreCase("VIP")
+                            && parts[6].trim().equalsIgnoreCase(STATUS_PENDING)) {
+                        parts[6] = STATUS_CANCELLED;
+                        line = join(parts, "|");
+                        changed = true;
+                    }
+                }
+                lines.add(line);
+            }
+        } catch (IOException e) {
+            return false;
+        }
+
+        if (!changed) return false;
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE))) {
+            for (int i = 1; i <= lines.getNumberOfEntries(); i++) {
+                bw.write(lines.getEntry(i));
+                bw.newLine();
+            }
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
     public String getCheckInDate(String confirmationNo) {
-        return checkInDates.getOrDefault(confirmationNo, "N/A");
+        String[] row = findLatestVipBookingForGuest(confirmationNo);
+        return row == null ? "N/A" : row[4];
     }
 
-    /**
-     * Returns the check-out date for a given confirmation number.
-     */
     public String getCheckOutDate(String confirmationNo) {
-        return checkOutDates.getOrDefault(confirmationNo, "N/A");
+        String[] row = findLatestVipBookingForGuest(confirmationNo);
+        return row == null ? "N/A" : row[5];
     }
 
-    /**
-     * Returns the requested room type for a given confirmation number.
-     * Returns null if no preference was recorded.
-     */
     public String getRequestedRoomType(String confirmationNo) {
-        return requestedRoomTypes.get(confirmationNo);
+        String[] row = findLatestVipBookingForGuest(confirmationNo);
+        return row == null ? null : row[3];
     }
 
-    /**
-     * Allocates a specific room (by room number) to the given guest
-     * and removes that guest from the queue.
-     *
-     * Used for manual allocation when auto-match fails.
-     */
-    public AllocationResult allocateRoom(Guest guest, String roomNumber) {
-
-        if (guest == null || roomNumber == null) {
-            return AllocationResult.failure("Invalid guest or room number.");
+    private String[] findLatestVipBookingForGuest(String confirmationNo) {
+        String[] found = null;
+        String[][] rows = readAllVipBookings();
+        for (String[] row : rows) {
+            if (row[1].equalsIgnoreCase(confirmationNo)) found = row;
         }
+        return found;
+    }
 
-        // Find the room in allRooms by number.
-        Room target = null;
-        for (Room r : allRooms) {
-            if (r.getRoomNumber().equalsIgnoreCase(roomNumber)
-                    && isRoomAvailable(r)) {
-                target = r;
-                break;
-            }
+    // ------------------------------------------------------------------
+    // Room management / allocation
+    // ------------------------------------------------------------------
+
+    public ListInterface<Room> getAvailableRooms() {
+        ListInterface<Room> available = new ArrayList<>();
+        for (int i = 1; i <= allRooms.getNumberOfEntries(); i++) {
+            Room room = allRooms.getEntry(i);
+            if (isRoomAvailable(room)) available.add(room);
         }
-
-        if (target == null) {
-            return AllocationResult.failure(
-                    "Room " + roomNumber + " is not available.");
-        }
-
-        // Remove guest from queue.
-        vipQueue.removeByConfirmationNo(guest.getConfirmationNo());
-
-        // Room stays Vacant — it becomes Occupied only when guest checks in.
-        // Just update lastUpdate to record when the assignment happened.
-        target.setLastUpdate(DateUtils.getCurrentTimestamp());
-
-        // Persist.
-        saveRoomsToFile();
-        saveGuestsToFile();
-        saveBookingToFile(guest, target);
-
-        String entry = buildLogEntry(guest, target);
-        allocationLog.add(entry);
-
-        return AllocationResult.success(guest, target, entry);
-    }
-
-    /**
-     * Returns the highest-priority guest without removing them.
-     */
-    public Guest peekNextGuest() {
-        return vipQueue.peek();
-    }
-
-    /**
-     * Removes a specific guest from the queue by confirmation number
-     * and saves the updated guest list to guests.txt.
-     */
-    public boolean removeGuestFromQueue(String confirmationNo) {
-
-        boolean removed = vipQueue.removeByConfirmationNo(confirmationNo);
-
-        if (removed) {
-            saveGuestsToFile();
-        }
-
-        return removed;
-    }
-
-    /**
-     * Finds a guest in the queue by confirmation number without removing them.
-     */
-    public Guest findGuestInQueue(String confirmationNo) {
-        return vipQueue.find(confirmationNo);
-    }
-
-    /**
-     * Returns all guests currently waiting, ordered highest-tier first.
-     */
-    public Guest[] getAllWaitingGuests() {
-        return vipQueue.getAll();
-    }
-
-    /** Returns the number of guests currently waiting in the VIP queue. */
-    public int getQueueSize() {
-        return vipQueue.size();
-    }
-
-    /** Returns true if no guests are waiting. */
-    public boolean isQueueEmpty() {
-        return vipQueue.isEmpty();
-    }
-
-    // -------------------------------------------------------
-    // Room pool management
-    // -------------------------------------------------------
-
-    /**
-     * Returns all rooms that are currently Vacant and Ready.
-     * Derived live from allRooms so it always reflects the latest state.
-     */
-    public List<Room> getAvailableRooms() {
-
-        List<Room> available = new ArrayList<>();
-
-        for (Room r : allRooms) {
-            if (isRoomAvailable(r)) {
-                available.add(r);
-            }
-        }
-
         return available;
     }
 
-    /** Returns the count of currently available rooms. */
     public int getAvailableRoomCount() {
-        return getAvailableRooms().size();
+        return getAvailableRooms().getNumberOfEntries();
     }
 
-    /**
-     * Manually adds a room to the in-memory room list and saves to rooms.txt.
-     * Used by the sample data loader and the UI.
-     */
     public void addAvailableRoom(Room room) {
-
-        if (room == null) {
-            return;
-        }
-
+        if (room == null) return;
         allRooms.add(room);
         saveRoomsToFile();
     }
 
-    // -------------------------------------------------------
-    // Allocation
-    // -------------------------------------------------------
-
-    /**
-     * Assigns the best available room to the highest-priority VIP guest.
-     *
-     * Auto-match logic:
-     *   1. Check if the guest has a requested room type.
-     *   2. If yes, find the first available room of that type.
-     *   3. If no match, return a failure so the UI can prompt manual selection.
-     *   4. If no preference, take the first available room.
-     */
-    /**
-     * Allocates the next Pending VIP booking according to VIP priority.
-     *
-     * Priority order:
-     *   1. Loyalty tier: Diamond, Elite, Platinum, Gold, Silver
-     *   2. For guests in the same tier, keep their existing booking/queue order
-     *
-     * This method owns all VIP-specific decision logic so other controllers
-     * only need to call this method.
-     */
-    /**
-     * Returns true when at least one guest in the VIP priority queue has a
-     * Pending VIP booking. BookingController uses this only to decide whether
-     * the next allocation click must be handled by the VIP module first.
-     */
     public boolean hasPendingVipBooking() {
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                String trimmed = line.trim();
-                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = trimmed.split("\\|", -1);
-                if (parts.length < 9) {
-                    continue;
-                }
-
-                if (parts[2].trim().equalsIgnoreCase("VIP")
-                        && parts[6].trim().equalsIgnoreCase("Pending")
-                        && vipQueue.find(parts[1].trim()) != null) {
-                    return true;
-                }
+        String[][] rows = readAllVipBookings();
+        for (String[] row : rows) {
+            if (row[6].equalsIgnoreCase(STATUS_PENDING)
+                    && findGuestInQueue(row[1]) != null) {
+                return true;
             }
-        } catch (IOException ignored) {
         }
         return false;
     }
 
+    /**
+     * Allocates exactly ONE Pending VIP booking. Priority is loyalty tier only;
+     * same-tier bookings retain their existing file/booking order.
+     */
     public AllocationResult allocateNextPendingBooking() {
-
-        if (vipQueue.isEmpty()) {
-            return AllocationResult.failure("VIP queue is empty.");
-        }
-
-        // Always reload the shared room file before allocating so this controller
-        // sees room changes made by other modules.
+        if (vipQueue.isEmpty()) return AllocationResult.failure("VIP queue is empty.");
         loadRoomsFromFile();
 
-        Guest selectedGuest = null;
+        String[][] pending = getVipBookingsByStatus(STATUS_PENDING);
+        if (pending.length == 0) return AllocationResult.failure("No pending VIP booking found.");
+
+        // Stable insertion sort: tier only. Equal tiers keep original booking order.
+        insertionSortBookingsByTier(pending, true);
+
         String[] selectedBooking = null;
-
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-            String line;
-
-            while ((line = br.readLine()) != null) {
-                String trimmed = line.trim();
-                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = trimmed.split("\\|", -1);
-                if (parts.length < 9) {
-                    continue;
-                }
-
-                // Only Pending VIP bookings are eligible for VIP allocation.
-                if (!parts[2].trim().equalsIgnoreCase("VIP")
-                        || !parts[6].trim().equalsIgnoreCase("Pending")) {
-                    continue;
-                }
-
-                Guest guest = vipQueue.find(parts[1].trim());
-                if (guest == null) {
-                    continue;
-                }
-
-                if (selectedGuest == null
-                        || isHigherVipBookingPriority(guest, selectedGuest)) {
-                    selectedGuest = guest;
-                    selectedBooking = parts;
-                }
+        Guest selectedGuest = null;
+        for (String[] row : pending) {
+            Guest guest = findGuestInQueue(row[1]);
+            if (guest != null) {
+                selectedBooking = row;
+                selectedGuest = guest;
+                break;
             }
-
-        } catch (IOException e) {
-            return AllocationResult.failure(
-                    "Could not read VIP bookings: " + e.getMessage());
         }
 
-        if (selectedGuest == null || selectedBooking == null) {
+        if (selectedGuest == null) {
             return AllocationResult.failure("No pending VIP booking found.");
         }
 
-        String requestedType = selectedBooking[3].trim();
-        String checkIn = selectedBooking[4].trim();
-        String checkOut = selectedBooking[5].trim();
-
-        // Restore the selected booking preferences into the VIP controller maps.
-        // This is important when BookingController creates a fresh VIP controller
-        // after the program has been restarted.
-        requestedRoomTypes.put(selectedGuest.getConfirmationNo(), requestedType);
-        checkInDates.put(selectedGuest.getConfirmationNo(), checkIn);
-        checkOutDates.put(selectedGuest.getConfirmationNo(), checkOut);
-
-        List<Room> available = getAvailableRooms();
+        ListInterface<Room> available = getAvailableRooms();
         if (available.isEmpty()) {
             return AllocationResult.failure("No rooms are currently available.");
         }
 
         Room matched = null;
-        for (Room room : available) {
+        String requestedType = selectedBooking[3];
+        for (int i = 1; i <= available.getNumberOfEntries(); i++) {
+            Room room = available.getEntry(i);
             if (room.getRoomType().equalsIgnoreCase(requestedType)
                     && !hasRoomDateClash(room.getRoomNumber(), selectedBooking)) {
                 matched = room;
@@ -864,424 +439,602 @@ public class VIPRoomAllocationController {
         }
 
         if (matched == null) {
-            return AllocationResult.failure(
-                    "No available room of type '" + requestedType
-                    + "' for " + selectedGuest.getName() + ".");
+            // Requested room type is unavailable. Keep serving this SAME VIP guest
+            // and offer only alternative rooms that are Vacant + Ready and do not
+            // clash with this booking's date range.
+            ListInterface<Room> alternatives = new ArrayList<>();
+            for (int i = 1; i <= available.getNumberOfEntries(); i++) {
+                Room room = available.getEntry(i);
+                if (!hasRoomDateClash(room.getRoomNumber(), selectedBooking)) {
+                    alternatives.add(room);
+                }
+            }
+
+            if (alternatives.isEmpty()) {
+                return AllocationResult.failure(
+                        "No suitable rooms are available for " + selectedGuest.getName()
+                        + " during the selected booking dates. Booking remains Pending.");
+            }
+
+            return AllocationResult.manualNeeded(
+                    selectedGuest,
+                    alternatives,
+                    "No available room of requested type '" + requestedType
+                    + "' for " + selectedGuest.getName()
+                    + ". Please choose another available room.");
         }
 
-        // Remove only the selected Pending VIP guest from the priority queue.
-        vipQueue.removeByConfirmationNo(selectedGuest.getConfirmationNo());
-
-        // Room stays Vacant until check-in. The booking itself reserves the room
-        // for its date range, and hasRoomDateClash prevents double-booking.
+        vipQueue.remove(selectedGuest);
         matched.setLastUpdate(DateUtils.getCurrentTimestamp());
-
         saveRoomsToFile();
-        saveGuestsToFile();
-        saveBookingToFile(selectedGuest, matched);
+
+        if (!saveBookingAssignment(selectedGuest, matched, selectedBooking)) {
+            vipQueue.add(selectedGuest);
+            return AllocationResult.failure("Could not update the VIP booking.");
+        }
 
         String entry = buildLogEntry(selectedGuest, matched);
         allocationLog.add(entry);
-
         return AllocationResult.success(selectedGuest, matched, entry);
     }
 
-    /**
-     * Backward-compatible entry point used by existing VIP UI code.
-     * Allocation is now restricted to guests with a Pending VIP booking.
-     */
+    /** Returns the requested room type for the guest's current Pending VIP booking. */
+    public String getRequestedRoomTypeForPendingBooking(String confirmationNo) {
+        String[] booking = findPendingVipBookingForGuest(confirmationNo);
+        return booking == null ? "N/A" : booking[3];
+    }
+
+    /** Manual allocation for a particular VIP guest. */
+    public AllocationResult allocateRoom(Guest guest, String roomNumber) {
+        if (guest == null || roomNumber == null) {
+            return AllocationResult.failure("Invalid guest or room number.");
+        }
+        loadRoomsFromFile();
+        String[] booking = findPendingVipBookingForGuest(guest.getConfirmationNo());
+        if (booking == null) {
+            return AllocationResult.failure("No Pending VIP booking found for this guest.");
+        }
+
+        Room target = null;
+        for (int i = 1; i <= allRooms.getNumberOfEntries(); i++) {
+            Room room = allRooms.getEntry(i);
+            if (room.getRoomNumber().equalsIgnoreCase(roomNumber)
+                    && isRoomAvailable(room)
+                    && !hasRoomDateClash(roomNumber, booking)) {
+                target = room;
+                break;
+            }
+        }
+        if (target == null) {
+            return AllocationResult.failure("Room " + roomNumber + " is not available.");
+        }
+
+        vipQueue.remove(guest);
+        target.setLastUpdate(DateUtils.getCurrentTimestamp());
+        saveRoomsToFile();
+        if (!saveBookingAssignment(guest, target, booking)) {
+            vipQueue.add(guest);
+            return AllocationResult.failure("Could not update the VIP booking.");
+        }
+
+        String entry = buildLogEntry(guest, target);
+        allocationLog.add(entry);
+        return AllocationResult.success(guest, target, entry);
+    }
+
     public AllocationResult allocateNextRoom() {
         return allocateNextPendingBooking();
     }
 
-    /**
-     * Returns true only when the candidate has a higher loyalty tier.
-     * Guests in the same tier keep their existing booking/queue order.
-     */
-    private boolean isHigherVipBookingPriority(Guest candidate, Guest current) {
-
-        int candidateTier = getTierPriority(candidate.getLoyaltyTier());
-        int currentTier = getTierPriority(current.getLoyaltyTier());
-
-        return candidateTier < currentTier;
-    }
-
-    private int getTierPriority(String tier) {
-        if (tier == null) return 99;
-
-        switch (tier.trim().toUpperCase()) {
-            case "DIAMOND":  return 1;
-            case "ELITE":    return 2;
-            case "PLATINUM": return 3;
-            case "GOLD":     return 4;
-            case "SILVER":   return 5;
-            default:         return 99;
+    private String[] findPendingVipBookingForGuest(String confirmationNo) {
+        String[][] rows = getVipBookingsByStatus(STATUS_PENDING);
+        for (String[] row : rows) {
+            if (row[1].equalsIgnoreCase(confirmationNo)) return row;
         }
-    }
-
-    /** Parses a booking date for room-overlap checking only. */
-    private LocalDate parseBookingDate(String value) {
-        try {
-            return DateUtils.parseDate(value.trim());
-        } catch (Exception e) {
-            return LocalDate.MAX;
-        }
-    }
-
-    /**
-     * Checks whether a room is already reserved for an overlapping Assigned or
-     * Checked-In booking. Pending bookings do not reserve a room yet.
-     */
-    private boolean hasRoomDateClash(String roomNumber, String[] targetBooking) {
-        LocalDate targetIn = parseBookingDate(targetBooking[4]);
-        LocalDate targetOut = parseBookingDate(targetBooking[5]);
-
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-            String line;
-
-            while ((line = br.readLine()) != null) {
-                String trimmed = line.trim();
-                if (trimmed.isEmpty() || trimmed.startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = trimmed.split("\\|", -1);
-                if (parts.length < 9) {
-                    continue;
-                }
-
-                String status = parts[6].trim();
-                boolean reservesRoom = status.equalsIgnoreCase("Assigned")
-                        || status.equalsIgnoreCase("Checked In");
-
-                if (!reservesRoom
-                        || !parts[7].trim().equalsIgnoreCase(roomNumber)
-                        || parts[0].trim().equalsIgnoreCase(targetBooking[0].trim())) {
-                    continue;
-                }
-
-                if (targetIn.isBefore(parseBookingDate(parts[5]))
-                        && targetOut.isAfter(parseBookingDate(parts[4]))) {
-                    return true;
-                }
-            }
-        } catch (IOException ignored) {
-            // If the file cannot be read here, normal allocation error handling
-            // will still occur when the booking is persisted.
-        }
-
-        return false;
-    }
-
-    /**
-     * Processes the entire queue, allocating rooms one by one until
-     * either the queue or the available room pool is exhausted.
-     */
-    public List<AllocationResult> allocateAll() {
-
-        List<AllocationResult> results = new ArrayList<>();
-
-        while (!vipQueue.isEmpty() && !getAvailableRooms().isEmpty()) {
-            AllocationResult result = allocateNextPendingBooking();
-            results.add(result);
-            if (!result.isSuccess()) {
-                break;
-            }
-        }
-
-        // Report remaining guests who could not be allocated.
-        if (!vipQueue.isEmpty()) {
-            Guest[] remaining = vipQueue.getAll();
-            for (Guest g : remaining) {
-                if (g != null) {
-                    results.add(AllocationResult.failure(
-                            "No room available for " + g.getName()
-                            + " [" + g.getLoyaltyTier() + "]"
-                    ));
-                }
-            }
-        }
-
-        return results;
-    }
-
-    /** Returns the full allocation log. */
-    public List<String> getAllocationLog() {
-        return new ArrayList<>(allocationLog);
-    }
-
-    // -------------------------------------------------------
-    // VIP revenue report
-    // -------------------------------------------------------
-
-    /**
-     * Generates a revenue summary for PAID VIP bookings only.
-     *
-     * billing.txt does not store the loyalty tier directly, so the tier is
-     * derived from the nightly rate that was used when the VIP bill was
-     * generated. This keeps the report compatible with the existing file
-     * format and still works after a VIP guest has been removed from the
-     * waiting priority queue.
-     */
-    public List<VipRevenueRow> generateVipRevenueSummary() {
-        return generateVipRevenueSummary("ALL", "ALL");
-    }
-
-    /**
-     * Generates a revenue summary for PAID VIP bookings using optional
-     * loyalty-tier and room-type filters.
-     *
-     * @param tierFilter     ALL, Diamond, Elite, Platinum, Gold or Silver
-     * @param roomTypeFilter ALL, Standard, Deluxe or Suite
-     */
-    public List<VipRevenueRow> generateVipRevenueSummary(
-            String tierFilter, String roomTypeFilter) {
-
-        Map<String, Integer> bookingCounts = new HashMap<>();
-        Map<String, Double> revenues = new HashMap<>();
-
-        String[] tiers = {"Diamond", "Elite", "Platinum", "Gold", "Silver"};
-        for (String tier : tiers) {
-            bookingCounts.put(tier, 0);
-            revenues.put(tier, 0.0);
-        }
-
-        // Keep the booking ID and requested room type for VIP bookings.
-        Map<String, String> vipBookingRoomTypes = new HashMap<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty() || line.startsWith("#")) continue;
-
-                String[] parts = line.split("\\|", -1);
-                if (parts.length >= 9 && parts[2].trim().equalsIgnoreCase("VIP")) {
-                    vipBookingRoomTypes.put(parts[0].trim(), parts[3].trim());
-                }
-            }
-        } catch (IOException ignored) {
-            // No VIP bookings means an empty revenue report.
-        }
-
-        // billing.txt format:
-        // billId|bookingId|confirmationNo|roomNumber|roomType|checkIn|checkOut|nights|amount|paymentStatus|createdAt
-        try (BufferedReader br = new BufferedReader(new FileReader(BILLING_FILE))) {
-            String line;
-
-            while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty() || line.startsWith("#")) continue;
-
-                String[] parts = line.split("\\|", -1);
-                if (parts.length < 10) continue;
-
-                String bookingId = parts[1].trim();
-                String paymentStatus = parts[9].trim();
-
-                if (!vipBookingRoomTypes.containsKey(bookingId)
-                        || !paymentStatus.equalsIgnoreCase("Paid")) {
-                    continue;
-                }
-
-                String bookingRoomType = vipBookingRoomTypes.get(bookingId);
-                if (!"ALL".equalsIgnoreCase(roomTypeFilter)
-                        && !bookingRoomType.equalsIgnoreCase(roomTypeFilter)) {
-                    continue;
-                }
-
-                try {
-                    long nights = Long.parseLong(parts[7].trim());
-                    double amount = Double.parseDouble(parts[8].trim());
-                    String tier = inferTierFromVipBill(nights, amount);
-
-                    if (tier == null) continue;
-
-                    if (!"ALL".equalsIgnoreCase(tierFilter)
-                            && !tier.equalsIgnoreCase(tierFilter)) {
-                        continue;
-                    }
-
-                    bookingCounts.put(tier, bookingCounts.get(tier) + 1);
-                    revenues.put(tier, revenues.get(tier) + amount);
-
-                } catch (NumberFormatException ignored) {
-                    // Skip malformed billing rows.
-                }
-            }
-
-        } catch (IOException ignored) {
-            // Return zero rows if billing.txt cannot be read.
-        }
-
-        List<VipRevenueRow> rows = new ArrayList<>();
-        for (String tier : tiers) {
-            if ("ALL".equalsIgnoreCase(tierFilter)
-                    || tier.equalsIgnoreCase(tierFilter)) {
-                rows.add(new VipRevenueRow(
-                        tier,
-                        bookingCounts.get(tier),
-                        revenues.get(tier)));
-            }
-        }
-
-        return rows;
-    }
-
-    private boolean containsIgnoreCase(List<String> values, String target) {
-        for (String value : values) {
-            if (value.equalsIgnoreCase(target)) return true;
-        }
-        return false;
-    }
-
-    /**
-     * Derives the loyalty tier from amount / nights using the same tier rates
-     * used when VIP billing records are created.
-     */
-    private String inferTierFromVipBill(long nights, double amount) {
-        if (nights <= 0) return null;
-
-        double rate = amount / nights;
-
-        if (Math.abs(rate - TIER_RATES.get("DIAMOND")) < 0.01)  return "Diamond";
-        if (Math.abs(rate - TIER_RATES.get("ELITE")) < 0.01)    return "Elite";
-        if (Math.abs(rate - TIER_RATES.get("PLATINUM")) < 0.01) return "Platinum";
-        if (Math.abs(rate - TIER_RATES.get("GOLD")) < 0.01)     return "Gold";
-        if (Math.abs(rate - TIER_RATES.get("SILVER")) < 0.01)   return "Silver";
-
         return null;
     }
 
-    /**
-     * Purpose:
-     * Generates a unique 8-digit confirmation number by finding
-     * the highest existing numeric confirmation number in guests.txt
-     * and incrementing it by 1.
-     */
-    public String generateConfirmationNo() {
+    private boolean saveBookingAssignment(Guest guest, Room room, String[] targetBooking) {
+        ListInterface<String> lines = new ArrayList<>();
+        boolean updated = false;
+        String bookingId = targetBooking[0];
 
-        int max = 0;
-
-        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
-
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
             String line;
-
             while ((line = br.readLine()) != null) {
-
-                line = line.trim();
-
-                if (line.isEmpty() || line.startsWith("#")) {
-                    continue;
+                String trimmed = line.trim();
+                if (!updated && !trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                    String[] parts = trimmed.split("\\|", -1);
+                    if (parts.length >= 9
+                            && parts[0].trim().equalsIgnoreCase(bookingId)
+                            && parts[1].trim().equalsIgnoreCase(guest.getConfirmationNo())
+                            && parts[2].trim().equalsIgnoreCase("VIP")
+                            && parts[6].trim().equalsIgnoreCase(STATUS_PENDING)) {
+                        parts[6] = STATUS_ASSIGNED;
+                        parts[7] = room.getRoomNumber();
+                        line = join(parts, "|");
+                        updated = true;
+                    }
                 }
-
-                String[] parts = line.split("\\|");
-
-                if (parts.length >= 1 && parts[0].trim().matches("\\d{8}")) {
-                    try {
-                        int num = Integer.parseInt(parts[0].trim());
-                        if (num > max) {
-                            max = num;
-                        }
-                    } catch (NumberFormatException ignored) {}
-                }
+                lines.add(line);
             }
-
-        } catch (IOException ignored) {}
-
-        int nextNumber;
-        if (max == 0) {
-            nextNumber = 80000001;
-        } else {
-            nextNumber = max + 1;
+        } catch (IOException e) {
+            return false;
         }
 
-        String confirmationNo = String.format("%08d", nextNumber);
-        while (idExistsInFile(GUESTS_FILE, confirmationNo)) {
-            nextNumber++;
-            confirmationNo = String.format("%08d", nextNumber);
+        if (!updated) return false;
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BOOKINGS_FILE))) {
+            for (int i = 1; i <= lines.getNumberOfEntries(); i++) {
+                bw.write(lines.getEntry(i));
+                bw.newLine();
+            }
+        } catch (IOException e) {
+            return false;
         }
-        return confirmationNo;
+
+        saveBillingToFile(guest, room, bookingId, targetBooking[4], targetBooking[5]);
+        return true;
+    }
+
+    private void saveBillingToFile(Guest guest, Room room, String bookingId,
+            String checkIn, String checkOut) {
+        int nights = 1;
+        try {
+            int calculated = DateUtils.countNights(checkIn, checkOut);
+            if (calculated > 0) nights = calculated;
+        } catch (Exception ignored) { }
+
+        double amount = nights * getTierRate(guest.getLoyaltyTier());
+        String billId = generateNextBillId();
+
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(BILLING_FILE, true))) {
+            bw.write(billId + "|" + bookingId + "|" + guest.getConfirmationNo() + "|"
+                    + room.getRoomNumber() + "|" + room.getRoomType() + "|"
+                    + checkIn + "|" + checkOut + "|" + nights + "|"
+                    + String.format("%.2f", amount) + "|Paid|"
+                    + DateUtils.getCurrentTimestamp());
+            bw.newLine();
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not append to " + BILLING_FILE + ": " + e.getMessage());
+        }
+    }
+
+    private boolean hasRoomDateClash(String roomNumber, String[] targetBooking) {
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length < 9) continue;
+
+                boolean reserves = parts[6].trim().equalsIgnoreCase(STATUS_ASSIGNED)
+                        || parts[6].trim().equalsIgnoreCase(STATUS_CHECKED_IN);
+                if (!reserves
+                        || !parts[7].trim().equalsIgnoreCase(roomNumber)
+                        || parts[0].trim().equalsIgnoreCase(targetBooking[0])) continue;
+
+                try {
+                    if (DateUtils.isDateOverlap(targetBooking[4], targetBooking[5],
+                            parts[4].trim(), parts[5].trim())) return true;
+                } catch (Exception ignored) { }
+            }
+        } catch (IOException ignored) { }
+        return false;
+    }
+
+    // ------------------------------------------------------------------
+    // Report 1: VIP Booking Report
+    // ------------------------------------------------------------------
+
+    /** Reads all VIP bookings and returns detached row arrays. */
+    public String[][] readAllVipBookings() {
+        ListInterface<String[]> rows = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length < 7 || !parts[2].trim().equalsIgnoreCase("VIP")) continue;
+
+                String[] row = new String[9];
+                for (int i = 0; i < 9; i++) {
+                    row[i] = i < parts.length ? parts[i].trim() : "";
+                }
+                rows.add(row);
+            }
+        } catch (IOException e) {
+            System.out.println("[VIP] Could not read " + BOOKINGS_FILE + ": " + e.getMessage());
+        }
+        return toBookingArray(rows);
+    }
+
+    public String[][] getVipBookingsByStatus(String status) {
+        String[][] all = readAllVipBookings();
+        ListInterface<String[]> result = new ArrayList<>();
+        for (String[] row : all) {
+            if (status == null || "ALL".equalsIgnoreCase(status)
+                    || row[6].equalsIgnoreCase(status)) {
+                result.add(row);
+            }
+        }
+        return toBookingArray(result);
+    }
+
+    /**
+     * Report search/filter + explicit stable insertion sort.
+     * sortOrder: TIER_DESC or TIER_ASC.
+     */
+    public String[][] generateVipBookingReport(String statusFilter,
+            String roomTypeFilter, String sortOrder) {
+        String[][] all = readAllVipBookings();
+        ListInterface<String[]> matches = new ArrayList<>();
+
+        // Explicit linear search/filter across booking records.
+        for (String[] row : all) {
+            boolean statusMatch = "ALL".equalsIgnoreCase(statusFilter)
+                    || row[6].equalsIgnoreCase(statusFilter);
+            boolean roomMatch = "ALL".equalsIgnoreCase(roomTypeFilter)
+                    || row[3].equalsIgnoreCase(roomTypeFilter);
+            if (statusMatch && roomMatch) matches.add(row);
+        }
+
+        String[][] result = toBookingArray(matches);
+        insertionSortBookingsByTier(result, !"TIER_ASC".equalsIgnoreCase(sortOrder));
+        return result;
+    }
+
+    /** Stable insertion sort written explicitly; no Collections/List.sort is used. */
+    private void insertionSortBookingsByTier(String[][] rows, boolean highestFirst) {
+        for (int i = 1; i < rows.length; i++) {
+            String[] key = rows[i];
+            int j = i - 1;
+            while (j >= 0 && shouldMoveBooking(rows[j], key, highestFirst)) {
+                rows[j + 1] = rows[j];
+                j--;
+            }
+            rows[j + 1] = key;
+        }
+    }
+
+    private boolean shouldMoveBooking(String[] left, String[] key, boolean highestFirst) {
+        int leftRank = tierRank(getTierForConfirmation(left[1]));
+        int keyRank = tierRank(getTierForConfirmation(key[1]));
+        return highestFirst ? leftRank > keyRank : leftRank < keyRank;
+    }
+
+    // ------------------------------------------------------------------
+    // Report 2: VIP Revenue Summary
+    // ------------------------------------------------------------------
+
+    public VipRevenueRow[] generateVipRevenueSummary() {
+        return generateVipRevenueSummary("ALL", "ALL", "REVENUE_DESC");
+    }
+
+    public VipRevenueRow[] generateVipRevenueSummary(String tierFilter,
+            String roomTypeFilter) {
+        return generateVipRevenueSummary(tierFilter, roomTypeFilter, "REVENUE_DESC");
+    }
+
+    /**
+     * Generates PAID VIP revenue, applies two filters, then explicitly sorts
+     * the summary with insertion sort.
+     *
+     * sortOrder: REVENUE_DESC, REVENUE_ASC, or TIER_DESC.
+     */
+    public VipRevenueRow[] generateVipRevenueSummary(String tierFilter,
+            String roomTypeFilter, String sortOrder) {
+        String[] tiers = {"Diamond", "Elite", "Platinum", "Gold", "Silver"};
+        int[] counts = new int[tiers.length];
+        double[] revenues = new double[tiers.length];
+
+        try (BufferedReader br = new BufferedReader(new FileReader(BILLING_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length < 10 || !parts[9].trim().equalsIgnoreCase("Paid")) continue;
+
+                String[] booking = findBookingById(parts[1].trim());
+                if (booking == null || !booking[2].equalsIgnoreCase("VIP")) continue;
+
+                String roomType = parts.length > 4 ? parts[4].trim() : booking[3];
+                if (!"ALL".equalsIgnoreCase(roomTypeFilter)
+                        && !roomType.equalsIgnoreCase(roomTypeFilter)) continue;
+
+                String tier = getTierForConfirmation(parts[2].trim());
+                if ("None".equalsIgnoreCase(tier)) {
+                    try {
+                        int nights = Integer.parseInt(parts[7].trim());
+                        double amount = Double.parseDouble(parts[8].trim());
+                        tier = inferTierFromVipBill(nights, amount);
+                    } catch (NumberFormatException ignored) {
+                        continue;
+                    }
+                }
+
+                if (!"ALL".equalsIgnoreCase(tierFilter)
+                        && !tier.equalsIgnoreCase(tierFilter)) continue;
+
+                int index = tierIndex(tier);
+                if (index < 0) continue;
+                try {
+                    double amount = Double.parseDouble(parts[8].trim());
+                    counts[index]++;
+                    revenues[index] += amount;
+                } catch (NumberFormatException ignored) { }
+            }
+        } catch (IOException ignored) { }
+
+        ListInterface<VipRevenueRow> resultList = new ArrayList<>();
+        for (int i = 0; i < tiers.length; i++) {
+            if ("ALL".equalsIgnoreCase(tierFilter)
+                    || tiers[i].equalsIgnoreCase(tierFilter)) {
+                resultList.add(new VipRevenueRow(tiers[i], counts[i], revenues[i]));
+            }
+        }
+
+        VipRevenueRow[] result = new VipRevenueRow[resultList.getNumberOfEntries()];
+        for (int i = 1; i <= resultList.getNumberOfEntries(); i++) {
+            result[i - 1] = resultList.getEntry(i);
+        }
+        insertionSortRevenueRows(result, sortOrder);
+        return result;
+    }
+
+    /** Explicit insertion sort for Report 2. */
+    private void insertionSortRevenueRows(VipRevenueRow[] rows, String sortOrder) {
+        for (int i = 1; i < rows.length; i++) {
+            VipRevenueRow key = rows[i];
+            int j = i - 1;
+            while (j >= 0 && shouldMoveRevenue(rows[j], key, sortOrder)) {
+                rows[j + 1] = rows[j];
+                j--;
+            }
+            rows[j + 1] = key;
+        }
+    }
+
+    private boolean shouldMoveRevenue(VipRevenueRow left, VipRevenueRow key, String sortOrder) {
+        if ("REVENUE_ASC".equalsIgnoreCase(sortOrder)) {
+            return left.getRevenue() > key.getRevenue();
+        }
+        if ("TIER_DESC".equalsIgnoreCase(sortOrder)) {
+            return tierRank(left.getTier()) > tierRank(key.getTier());
+        }
+        return left.getRevenue() < key.getRevenue(); // REVENUE_DESC
+    }
+
+    public double computeBookingPreview(String loyaltyTier, String checkIn, String checkOut) {
+        int nights = 1;
+        try {
+            int calculated = DateUtils.countNights(checkIn, checkOut);
+            if (calculated > 0) nights = calculated;
+        } catch (Exception ignored) { }
+        return nights * getTierRate(loyaltyTier);
+    }
+
+    // ------------------------------------------------------------------
+    // IDs / lookup helpers
+    // ------------------------------------------------------------------
+
+    /** Generates a unique confirmation number that is ALWAYS exactly 8 digits. */
+    public String generateConfirmationNo() {
+        int max = 0;
+        try (BufferedReader br = new BufferedReader(new FileReader(GUESTS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length == 0 || !parts[0].trim().matches("\\d{8}")) continue;
+                try {
+                    int value = Integer.parseInt(parts[0].trim());
+                    if (value > max) max = value;
+                } catch (NumberFormatException ignored) { }
+            }
+        } catch (IOException ignored) { }
+
+        int next = max + 1;
+        if (next > 99999999) {
+            throw new IllegalStateException("Cannot generate confirmation number: 8-digit limit reached.");
+        }
+        String id = String.format("%08d", next);
+        while (idExistsInFile(GUESTS_FILE, id)) {
+            next++;
+            if (next > 99999999) {
+                throw new IllegalStateException("Cannot generate confirmation number: 8-digit limit reached.");
+            }
+            id = String.format("%08d", next);
+        }
+        return id;
+    }
+
+    private String generateNextBookingId() {
+        int max = findMaxPrefixedId(BOOKINGS_FILE, "B");
+        return String.format("B%04d", max + 1);
+    }
+
+    private String generateNextBillId() {
+        int max = findMaxPrefixedId(BILLING_FILE, "BL");
+        return String.format("BL%04d", max + 1);
+    }
+
+    private int findMaxPrefixedId(String fileName, String prefix) {
+        int max = 0;
+        try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length == 0 || !parts[0].startsWith(prefix)) continue;
+                try {
+                    int value = Integer.parseInt(parts[0].substring(prefix.length()));
+                    if (value > max) max = value;
+                } catch (NumberFormatException ignored) { }
+            }
+        } catch (IOException ignored) { }
+        return max;
     }
 
     private boolean idExistsInFile(String fileName, String id) {
         try (BufferedReader br = new BufferedReader(new FileReader(fileName))) {
             String line;
             while ((line = br.readLine()) != null) {
-                if (line.trim().isEmpty() || line.trim().startsWith("#")) {
-                    continue;
-                }
-
-                String[] parts = line.split("\\|");
-                if (parts.length > 0 && parts[0].trim().equalsIgnoreCase(id)) {
-                    return true;
-                }
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length > 0 && parts[0].trim().equals(id)) return true;
             }
-        } catch (IOException ignored) {}
-
+        } catch (IOException ignored) { }
         return false;
     }
 
-    /**
-     * Clears the queue, room list, and allocation log.
-     * Does NOT touch the txt files.
-     */
+    private String[] findBookingById(String bookingId) {
+        try (BufferedReader br = new BufferedReader(new FileReader(BOOKINGS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String trimmed = line.trim();
+                if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+                String[] parts = trimmed.split("\\|", -1);
+                if (parts.length >= 9 && parts[0].trim().equalsIgnoreCase(bookingId)) {
+                    String[] result = new String[9];
+                    for (int i = 0; i < 9; i++) result[i] = parts[i].trim();
+                    return result;
+                }
+            }
+        } catch (IOException ignored) { }
+        return null;
+    }
+
+    // ------------------------------------------------------------------
+    // General helpers
+    // ------------------------------------------------------------------
+
+    private boolean isRoomAvailable(Room room) {
+        return room != null
+                && "Vacant".equalsIgnoreCase(room.getOccupancyStatus())
+                && "Ready".equalsIgnoreCase(room.getCleanlinessStatus());
+    }
+
+    private int tierScore(String tier) {
+        if (tier == null) return 0;
+        switch (tier.trim().toUpperCase()) {
+            case "DIAMOND": return 5;
+            case "ELITE": return 4;
+            case "PLATINUM": return 3;
+            case "GOLD": return 2;
+            case "SILVER": return 1;
+            default: return 0;
+        }
+    }
+
+    private int tierRank(String tier) {
+        int score = tierScore(tier);
+        return score == 0 ? 99 : 6 - score;
+    }
+
+    private int tierIndex(String tier) {
+        if (tier == null) return -1;
+        switch (tier.trim().toUpperCase()) {
+            case "DIAMOND": return 0;
+            case "ELITE": return 1;
+            case "PLATINUM": return 2;
+            case "GOLD": return 3;
+            case "SILVER": return 4;
+            default: return -1;
+        }
+    }
+
+    private double getTierRate(String tier) {
+        if (tier == null) return 399.00;
+        switch (tier.trim().toUpperCase()) {
+            case "DIAMOND": return 1099.00;
+            case "ELITE": return 899.00;
+            case "PLATINUM": return 699.00;
+            case "GOLD": return 599.00;
+            case "SILVER": return 399.00;
+            default: return 399.00;
+        }
+    }
+
+    private String inferTierFromVipBill(int nights, double amount) {
+        if (nights <= 0) return "None";
+        double rate = amount / nights;
+        if (Math.abs(rate - 1099.00) < 0.01) return "Diamond";
+        if (Math.abs(rate - 899.00) < 0.01) return "Elite";
+        if (Math.abs(rate - 699.00) < 0.01) return "Platinum";
+        if (Math.abs(rate - 599.00) < 0.01) return "Gold";
+        if (Math.abs(rate - 399.00) < 0.01) return "Silver";
+        return "None";
+    }
+
+    private String normaliseTier(String tier) {
+        int index = tierIndex(tier);
+        switch (index) {
+            case 0: return "Diamond";
+            case 1: return "Elite";
+            case 2: return "Platinum";
+            case 3: return "Gold";
+            case 4: return "Silver";
+            default: return "None";
+        }
+    }
+
+    public String getTierForConfirmation(String confirmationNo) {
+        Guest guest = findGuestByConfirmationNo(confirmationNo);
+        return guest == null ? "None" : guest.getLoyaltyTier();
+    }
+
+    public String getNameForConfirmation(String confirmationNo) {
+        Guest guest = findGuestByConfirmationNo(confirmationNo);
+        return guest == null ? confirmationNo : guest.getName();
+    }
+
+    private String buildLogEntry(Guest guest, Room room) {
+        return String.format("[ALLOCATED] %s (Tier: %s, Conf#: %s) -> Room %s (%s)",
+                guest.getName(), guest.getLoyaltyTier(), guest.getConfirmationNo(),
+                room.getRoomNumber(), room.getRoomType());
+    }
+
+    private String join(String[] parts, String delimiter) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) sb.append(delimiter);
+            sb.append(parts[i]);
+        }
+        return sb.toString();
+    }
+
+    private String[][] toBookingArray(ListInterface<String[]> list) {
+        String[][] result = new String[list.getNumberOfEntries()][];
+        for (int i = 1; i <= list.getNumberOfEntries(); i++) {
+            result[i - 1] = list.getEntry(i);
+        }
+        return result;
+    }
+
+    public String[] getAllocationLog() {
+        String[] result = new String[allocationLog.getNumberOfEntries()];
+        for (int i = 1; i <= allocationLog.getNumberOfEntries(); i++) {
+            result[i - 1] = allocationLog.getEntry(i);
+        }
+        return result;
+    }
+
     public void reset() {
         vipQueue.clear();
         allRooms.clear();
         allocationLog.clear();
     }
 
-    // -------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Result DTOs
+    // ------------------------------------------------------------------
 
-    /**
-     * A room is available if it is Vacant AND has cleanliness "Ready".
-     * Matches the actual value used in rooms.txt.
-     */
-    private boolean isRoomAvailable(Room room) {
-
-        return room != null
-                && "Vacant".equalsIgnoreCase(room.getOccupancyStatus())
-                && "Ready".equalsIgnoreCase(room.getCleanlinessStatus());
-    }
-
-    /**
-     * Normalises a loyalty tier string to title case.
-     * Handles mixed-case inputs like "PLAtinum" or "DIAMOND".
-     */
-    private String normaliseTier(String tier) {
-
-        if (tier == null || tier.isEmpty()) {
-            return "None";
-        }
-
-        String upper = tier.toUpperCase();
-
-        switch (upper) {
-            case "DIAMOND":  return "Diamond";
-            case "ELITE":    return "Elite";
-            case "PLATINUM": return "Platinum";
-            case "GOLD":     return "Gold";
-            case "SILVER":   return "Silver";
-            default:         return "None";
-        }
-    }
-
-    /** Builds a human-readable log entry for one allocation. */
-    private String buildLogEntry(Guest guest, Room room) {
-
-        return String.format(
-                "[ALLOCATED] %s (Tier: %s, Conf#: %s) → Room %s (%s)",
-                guest.getName(),
-                guest.getLoyaltyTier(),
-                guest.getConfirmationNo(),
-                room.getRoomNumber(),
-                room.getRoomType()
-        );
-    }
-
-    /** One row in the VIP revenue summary report. */
     public static class VipRevenueRow {
         private final String tier;
         private final int bookingCount;
@@ -1293,43 +1046,48 @@ public class VIPRoomAllocationController {
             this.revenue = revenue;
         }
 
-        public String getTier()       { return tier; }
-        public int getBookingCount()  { return bookingCount; }
-        public double getRevenue()    { return revenue; }
+        public String getTier() { return tier; }
+        public int getBookingCount() { return bookingCount; }
+        public double getRevenue() { return revenue; }
     }
 
-    // -------------------------------------------------------
-    // Inner class — AllocationResult
-    // -------------------------------------------------------
-
-    /**
-     * Immutable result object returned by allocateNextRoom() and allocateAll().
-     */
     public static class AllocationResult {
+        public enum Kind { SUCCESS, MANUAL_NEEDED, FAILURE }
 
-        private final boolean success;
-        private final Guest   guest;
-        private final Room    room;
-        private final String  message;
+        private final Kind kind;
+        private final Guest guest;
+        private final Room room;
+        private final ListInterface<Room> availableRooms;
+        private final String message;
 
-        private AllocationResult(boolean success, Guest guest, Room room, String message) {
-            this.success = success;
-            this.guest   = guest;
-            this.room    = room;
+        private AllocationResult(Kind kind, Guest guest, Room room,
+                ListInterface<Room> availableRooms, String message) {
+            this.kind = kind;
+            this.guest = guest;
+            this.room = room;
+            this.availableRooms = availableRooms;
             this.message = message;
         }
 
         static AllocationResult success(Guest guest, Room room, String message) {
-            return new AllocationResult(true, guest, room, message);
+            return new AllocationResult(Kind.SUCCESS, guest, room, null, message);
+        }
+
+        static AllocationResult manualNeeded(Guest guest,
+                ListInterface<Room> availableRooms, String message) {
+            return new AllocationResult(Kind.MANUAL_NEEDED, guest, null,
+                    availableRooms, message);
         }
 
         static AllocationResult failure(String message) {
-            return new AllocationResult(false, null, null, message);
+            return new AllocationResult(Kind.FAILURE, null, null, null, message);
         }
 
-        public boolean isSuccess()  { return success; }
-        public Guest   getGuest()   { return guest;   }
-        public Room    getRoom()    { return room;     }
-        public String  getMessage() { return message;  }
+        public boolean isSuccess() { return kind == Kind.SUCCESS; }
+        public boolean isManualNeeded() { return kind == Kind.MANUAL_NEEDED; }
+        public Guest getGuest() { return guest; }
+        public Room getRoom() { return room; }
+        public ListInterface<Room> getAvailableRooms() { return availableRooms; }
+        public String getMessage() { return message; }
     }
 }
