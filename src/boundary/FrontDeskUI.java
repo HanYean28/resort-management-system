@@ -30,20 +30,11 @@ public class FrontDeskUI {
             System.out.println(" [3] Remove Guest Record");
             System.out.println(" [4] Generate Report 1: Guest Directory Report");
             System.out.println(" [5] Generate Report 2: Guest Billing History Report");
-            System.out.println(" [6] View Rooms Available Today");
+            System.out.println(" [6] Room Availability");
             System.out.println(" [0] Return to Main Menu");
             UIUtils.printSectionLine();
-            System.out.print("Please enter choice (0-6): ");
 
-            if (scanner.hasNextInt()) {
-                choice = scanner.nextInt();
-                scanner.nextLine();
-            } else {
-                UIUtils.printError("Invalid input! Please enter a number.");
-                scanner.nextLine();
-                UIUtils.pressEnterToContinue(scanner);
-                continue;
-            }
+            choice = readIntOption("Please enter choice (0-6): ", 0, 6);
 
             switch (choice) {
                 case 1:
@@ -90,9 +81,7 @@ public class FrontDeskUI {
         UIUtils.clearScreen();
         UIUtils.printHeader("SEARCH GUEST BY CONFIRMATION NUMBER");
 
-        System.out.print("Enter 8-digit Confirmation No: ");
-        String confirmationNo = scanner.nextLine().trim();
-        warnIfNotEightDigits(confirmationNo);
+        String confirmationNo = readConfirmationNo("Enter 8-digit Confirmation No: ");
 
         Guest result = service.searchByConfirmationNumber(confirmationNo);
         if (result == null) {
@@ -100,6 +89,7 @@ public class FrontDeskUI {
         } else {
             System.out.println("\n[GUEST FOUND]");
             printGuestDetail(result);
+            printGuestBillingHistory(result.getConfirmationNo());
         }
     }
 
@@ -107,9 +97,13 @@ public class FrontDeskUI {
         UIUtils.clearScreen();
         UIUtils.printHeader("REMOVE GUEST RECORD");
 
-        System.out.print("Enter Confirmation No to remove: ");
-        String confirmationNo = scanner.nextLine().trim();
-        warnIfNotEightDigits(confirmationNo);
+        String confirmationNo = readConfirmationNo("Enter Confirmation No to remove: ");
+
+        System.out.print("Are you sure you want to remove guest " + confirmationNo + "? [Y/N]: ");
+        if (!readYesNo()) {
+            System.out.println("Cancelled. No record was removed.");
+            return;
+        }
 
         Guest removed = service.removeGuest(confirmationNo);
         if (removed == null) {
@@ -120,14 +114,33 @@ public class FrontDeskUI {
     }
 
     /**
-     * Soft (non-blocking) format check: confirmation numbers are 8 digits
-     * per spec. Prints a heads-up if the input doesn't match, but still lets
-     * the search/remove proceed normally either way.
+     * Reads a confirmation number from the user, re-prompting until it is
+     * exactly 8 digits. Confirmation numbers are free-form IDs (not a fixed
+     * set of options), so typing is kept, but the format is now enforced
+     * instead of just warned about.
      */
-    private void warnIfNotEightDigits(String confirmationNo) {
-        if (!confirmationNo.matches("\\d{8}")) {
-            System.out.println("[Notice] Confirmation numbers are usually 8 digits. "
-                    + "Pls double-check the number if you don't get a match.");
+    private String readConfirmationNo(String prompt) {
+        while (true) {
+            System.out.print(prompt);
+            String input = scanner.nextLine().trim();
+            if (input.matches("\\d{8}")) {
+                return input;
+            }
+            UIUtils.printError("Invalid format. Confirmation No must be exactly 8 digits (e.g. 80000001).");
+        }
+    }
+
+    /** Reads a Y/N confirmation, re-prompting on anything else. */
+    private boolean readYesNo() {
+        while (true) {
+            String input = scanner.nextLine().trim();
+            if (input.equalsIgnoreCase("Y")) {
+                return true;
+            }
+            if (input.equalsIgnoreCase("N")) {
+                return false;
+            }
+            System.out.print("Please enter Y or N: ");
         }
     }
 
@@ -135,13 +148,13 @@ public class FrontDeskUI {
         UIUtils.clearScreen();
         UIUtils.printHeader("GUEST DIRECTORY REPORT");
 
-        System.out.print("Show (1) Loyalty Members only, or (2) Non-Members only? [1/2]: ");
-        int filterChoice = readIntOption(1, 2);
+        System.out.println("Show:");
+        System.out.println(" [1] Loyalty Members only");
+        System.out.println(" [2] Non-Members only");
+        int filterChoice = readIntOption("Choice: ", 1, 2);
         boolean membersOnly = (filterChoice == 1);
 
-        System.out.print("Filter by Room Type (Standard/Deluxe/Suite), or press Enter for ALL: ");
-        String roomTypeFilter = scanner.nextLine().trim();
-        if (roomTypeFilter.isEmpty()) roomTypeFilter = "ALL";
+        String roomTypeFilter = readRoomTypeFilterMenu();
 
         ListInterface<Guest> report = service.generateGuestDirectoryReport(membersOnly, roomTypeFilter);
         System.out.println();
@@ -154,36 +167,58 @@ public class FrontDeskUI {
 
     private void displayAvailableRooms() {
         UIUtils.clearScreen();
-        UIUtils.printHeader("ROOMS AVAILABLE TODAY");
+        UIUtils.printHeader("ROOM AVAILABILITY");
 
-        ListInterface<Room> rooms = service.getAvailableRooms();
+        String roomTypeFilter = readRoomTypeFilterMenu();
+
+        ListInterface<Room> rooms = service.generateRoomAvailabilityReport(roomTypeFilter);
+        System.out.println();
+        UIUtils.printHeader("ROOM AVAILABILITY");
+
         if (rooms.isEmpty()) {
-            System.out.println("No rooms are available today.");
+            System.out.println("No rooms found for this filter.");
             return;
         }
 
-        System.out.printf("%-14s | %-15s | %-22s | %-10s%n",
-                "Room Number", "Room Type", "Clean Status", "Occupancy");
-        UIUtils.printSectionLine();
+        System.out.printf("%-8s %-12s %-14s %-14s %-20s%n",
+                "Room No", "Type", "Price/Night", "Availability", "Status");
+
+        int availableCount = 0;
+        int unavailableCount = 0;
+        int occupiedCount = 0;
+
         for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
             Room r = rooms.getEntry(i);
-            System.out.printf("%-14s | %-15s | %-22s | %-10s%n",
-                    r.getRoomNumber(), r.getRoomType(), r.getCleanlinessStatus(), r.getOccupancyStatus());
+            String availability = service.getRoomAvailabilityLabel(r);
+            String status = service.getRoomStatusLabel(r);
+            double price = service.getRoomTypePrice(r.getRoomType());
+
+            System.out.printf("%-8s %-12s RM%-12.2f %-14s %-20s%n",
+                    r.getRoomNumber(), r.getRoomType(), price, availability, status);
+
+            if (availability.equals("Available")) {
+                availableCount++;
+            } else if (availability.equals("Occupied")) {
+                occupiedCount++;
+            } else {
+                unavailableCount++;
+            }
         }
+
         UIUtils.printSectionLine();
-        System.out.println("Total Available: " + rooms.getNumberOfEntries());
+        System.out.println("Rooms shown: " + rooms.getNumberOfEntries()
+                + " | Available: " + availableCount
+                + " | Unavailable: " + unavailableCount
+                + " | Occupied: " + occupiedCount);
     }
 
     private void handleBillingReport() {
         UIUtils.clearScreen();
         UIUtils.printHeader("GUEST BILLING HISTORY REPORT");
 
-        System.out.print("Minimum billing amount (RM): ");
-        double minAmount = readDouble();
+        double minAmount = readNonNegativeDouble("Minimum billing amount (RM): ");
 
-        System.out.print("Filter by Room Type (Standard/Deluxe/Suite), or press Enter for ALL: ");
-        String roomTypeFilter = scanner.nextLine().trim();
-        if (roomTypeFilter.isEmpty()) roomTypeFilter = "ALL";
+        String roomTypeFilter = readRoomTypeFilterMenu();
 
         ListInterface<BillingRecord> report = service.generateGuestBillingReport(minAmount, roomTypeFilter);
         System.out.println();
@@ -200,15 +235,17 @@ public class FrontDeskUI {
             return;
         }
 
-        System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s%n",
-                "Confirmation No", "Name", "Tier", "Room No", "Room Type");
+        System.out.printf("%-14s | %-18s | %-8s | %-16s | %-10s | %-12s%n",
+                "Confirmation No", "Name", "Tier", "Room No", "Room Type", "Status");
         UIUtils.printSectionLine();
         for (int i = 1; i <= guests.getNumberOfEntries(); i++) {
             Guest g = guests.getEntry(i);
-            String roomNo = service.getGuestCurrentRoom(g.getConfirmationNo());
-            System.out.printf("%-14s | %-18s | %-8s | %-10s | %-10s%n",
-                    g.getConfirmationNo(), g.getName(), g.getLoyaltyTier(), roomNo,
-                    service.getRoomType(roomNo));
+            String rawRoomNo = service.getGuestCurrentRoom(g.getConfirmationNo());
+            String roomLabel = service.getGuestRoomStatusLabel(g.getConfirmationNo());
+            String bookingStatus = service.getGuestBookingStatus(g.getConfirmationNo());
+            System.out.printf("%-14s | %-18s | %-8s | %-16s | %-10s | %-12s%n",
+                    g.getConfirmationNo(), g.getName(), g.getLoyaltyTier(), roomLabel,
+                    service.getRoomType(rawRoomNo), bookingStatus);
         }
         UIUtils.printSectionLine();
         System.out.println("Total Records: " + guests.getNumberOfEntries());
@@ -219,9 +256,62 @@ public class FrontDeskUI {
         System.out.println("Guest Name      : " + g.getName());
         System.out.println("Phone Number    : " + g.getPhone());
         System.out.println("Loyalty Tier    : " + g.getLoyaltyTier());
-        System.out.println("Room Number     : " + service.getGuestCurrentRoom(g.getConfirmationNo()));
+        System.out.println("Room Number     : " + service.getGuestRoomStatusLabel(g.getConfirmationNo()));
         System.out.println("Room Type       : " + service.getGuestCurrentRoomType(g.getConfirmationNo()));
+        System.out.println("Booking Status  : " + service.getGuestBookingStatus(g.getConfirmationNo()));
         UIUtils.printSectionLine();
+    }
+
+    /**
+     * Shows the guest's full billing history (all stays, most recent
+     * first), flags any unpaid bill inline, and prints a total outstanding
+     * balance warning if applicable. Used right after Search Guest so
+     * front desk sees payment issues immediately, not just current stay.
+     */
+    private void printGuestBillingHistory(String confirmationNo) {
+        ListInterface<BillingRecord> bills = service.getBillingHistoryByConfirmationNo(confirmationNo);
+
+        System.out.println();
+        UIUtils.printHeader("BILLING HISTORY");
+
+        if (bills.isEmpty()) {
+            System.out.println("No billing records found for this guest.");
+            return;
+        }
+
+        System.out.printf("%-7s | %-7s | %-6s | %-10s | %-10s | %6s | %10s | %-10s%n",
+                "Bill", "Booking", "Room", "Check-In", "Check-Out", "Nights", "Amount", "Status");
+        UIUtils.printSectionLine();
+
+        double outstanding = 0.0;
+        double totalPaid = 0.0;
+        for (int i = 1; i <= bills.getNumberOfEntries(); i++) {
+            BillingRecord bill = bills.getEntry(i);
+            boolean unpaid = !bill.getPaymentStatus().equalsIgnoreCase("Paid");
+            String flag = unpaid ? "  <-- UNPAID" : "";
+
+            System.out.printf("%-7s | %-7s | %-6s | %-10s | %-10s | %6d | %10.2f | %-10s%s%n",
+                    bill.getBillId(), bill.getBookingId(), bill.getRoomNumber(),
+                    bill.getCheckInDate(), bill.getCheckOutDate(), bill.getNights(),
+                    bill.getAmount(), bill.getPaymentStatus(), flag);
+
+            if (unpaid) {
+                outstanding += bill.getAmount();
+            } else {
+                totalPaid += bill.getAmount();
+            }
+        }
+
+        UIUtils.printSectionLine();
+        System.out.println("Total Billing Records: " + bills.getNumberOfEntries());
+        System.out.printf("Total Paid to Date : RM %,.2f%n", totalPaid);
+
+        if (outstanding > 0) {
+            UIUtils.printError(String.format(
+                    "Outstanding balance: RM %.2f — please settle before check-out.", outstanding));
+        } else {
+            System.out.println("No outstanding balance.");
+        }
     }
 
     private void printBillingTable(ListInterface<BillingRecord> bills) {
@@ -233,6 +323,8 @@ public class FrontDeskUI {
         System.out.printf("%-7s | %-7s | %-14s | %-16s | %-6s | %-10s | %-6s | %10s | %-6s%n",
                 "Bill", "Booking", "Confirmation", "Guest", "Room", "Room Type", "Nights", "Amount", "Status");
         UIUtils.printSectionLine();
+
+        double totalRevenue = 0.0;
         for (int i = 1; i <= bills.getNumberOfEntries(); i++) {
             BillingRecord bill = bills.getEntry(i);
             System.out.printf("%-7s | %-7s | %-14s | %-16s | %-6s | %-10s | %-6d | %10.2f | %-6s%n",
@@ -245,31 +337,76 @@ public class FrontDeskUI {
                     bill.getNights(),
                     bill.getAmount(),
                     bill.getPaymentStatus());
+
+            totalRevenue += bill.getAmount();
         }
+
         UIUtils.printSectionLine();
-        System.out.println("Total Billing Records: " + bills.getNumberOfEntries());
+        System.out.println("Total Bookings : " + bills.getNumberOfEntries());
+        System.out.printf("Total Revenue  : RM %,.2f%n", totalRevenue);
     }
 
-    private Integer readIntOption(int min, int max) {
-        if (scanner.hasNextInt()) {
-            int value = scanner.nextInt();
-            scanner.nextLine();
-            if (value >= min && value <= max) {
-                return value;
+    /**
+     * Shows the fixed set of room type filter options as a numbered menu
+     * and returns "ALL", "Standard", "Deluxe" or "Suite". Since this is a
+     * closed set of options (not free-form text), the user picks a number
+     * instead of typing the word — no more risk of typos like "Delux"
+     * silently falling through to "ALL".
+     */
+    private String readRoomTypeFilterMenu() {
+        System.out.println("Filter by Room Type:");
+        System.out.println(" [1] All");
+        System.out.println(" [2] Standard");
+        System.out.println(" [3] Deluxe");
+        System.out.println(" [4] Suite");
+        int choice = readIntOption("Choice: ", 1, 4);
+
+        switch (choice) {
+            case 2: return "Standard";
+            case 3: return "Deluxe";
+            case 4: return "Suite";
+            default: return "ALL";
+        }
+    }
+
+    /**
+     * Reads an integer choice within [min, max], re-prompting on invalid
+     * input (non-numeric or out of range) instead of silently defaulting
+     * to the first option.
+     */
+    private int readIntOption(String prompt, int min, int max) {
+        while (true) {
+            System.out.print(prompt);
+            String input = scanner.nextLine().trim();
+            try {
+                int value = Integer.parseInt(input);
+                if (value >= min && value <= max) {
+                    return value;
+                }
+                UIUtils.printError("Please enter a number between " + min + " and " + max + ".");
+            } catch (NumberFormatException e) {
+                UIUtils.printError("Invalid input! Please enter a number.");
             }
-        } else {
-            scanner.nextLine();
         }
-        return min; // fall back to first option on bad input
     }
 
-    private double readDouble() {
-        if (scanner.hasNextDouble()) {
-            double value = scanner.nextDouble();
-            scanner.nextLine();
-            return value;
+    /**
+     * Reads a non-negative decimal amount, re-prompting on invalid input
+     * (non-numeric or negative) instead of silently defaulting to 0.0.
+     */
+    private double readNonNegativeDouble(String prompt) {
+        while (true) {
+            System.out.print(prompt);
+            String input = scanner.nextLine().trim();
+            try {
+                double value = Double.parseDouble(input);
+                if (value >= 0) {
+                    return value;
+                }
+                UIUtils.printError("Amount cannot be negative. Please try again.");
+            } catch (NumberFormatException e) {
+                UIUtils.printError("Invalid input! Please enter a valid amount (e.g. 150 or 150.50).");
+            }
         }
-        scanner.nextLine();
-        return 0.0;
     }
 }
