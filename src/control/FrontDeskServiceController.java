@@ -12,7 +12,7 @@ import entity.BillingRecord;
 import entity.BookingRequest;
 import entity.Guest;
 import entity.Room;
-import utility.DateUtils;
+import java.time.LocalDate;
 import java.util.Iterator;
 
 /**
@@ -128,14 +128,74 @@ public class FrontDeskServiceController {
         return available;
     }
 
+    /** Local price lookup, kept in sync with the Booking module's room type pricing. */
+    public double getRoomTypePrice(String roomType) {
+        if (roomType == null) {
+            return 0.0;
+        }
+        if (roomType.equalsIgnoreCase("Standard")) {
+            return 200.00;
+        }
+        if (roomType.equalsIgnoreCase("Deluxe")) {
+            return 300.00;
+        }
+        if (roomType.equalsIgnoreCase("Suite")) {
+            return 500.00;
+        }
+        return 0.0;
+    }
+
+    /**
+     * Returns every room matching the given room type filter ("ALL" to include
+     * every type), sorted by room number. Unlike getAvailableRooms(), this
+     * includes occupied and unavailable rooms too, for the full Room
+     * Availability report (with per-room status breakdown).
+     */
+    public ListInterface<Room> generateRoomAvailabilityReport(String roomTypeFilter) {
+        ListInterface<Room> allRooms = loadRoomsFromFile();
+        ListInterface<Room> filtered = new ArrayList<>();
+        boolean filterByType = roomTypeFilter != null && !roomTypeFilter.equalsIgnoreCase("ALL");
+
+        for (int i = 1; i <= allRooms.getNumberOfEntries(); i++) {
+            Room room = allRooms.getEntry(i);
+            if (!filterByType || room.getRoomType().equalsIgnoreCase(roomTypeFilter)) {
+                filtered.add(room);
+            }
+        }
+
+        insertionSortByRoomNumber(filtered);
+        return filtered;
+    }
+
+    /** "Occupied" / "Available" / "Unavailable" for a given room. */
+    public String getRoomAvailabilityLabel(Room room) {
+        boolean occupied = room.getOccupancyStatus().equalsIgnoreCase("Occupied")
+                || hasActiveBookingToday(room.getRoomNumber());
+        if (occupied) {
+            return "Occupied";
+        }
+        if (room.getCleanlinessStatus().equalsIgnoreCase("Ready")) {
+            return "Available";
+        }
+        return "Unavailable";
+    }
+
+    /** The cleaning-status reason shown only for Unavailable rooms; "-" otherwise. */
+    public String getRoomStatusLabel(Room room) {
+        if (getRoomAvailabilityLabel(room).equals("Unavailable")) {
+            return room.getCleanlinessStatus();
+        }
+        return "-";
+    }
+
     private boolean hasActiveBookingToday(String roomNumber) {
+        LocalDate today = LocalDate.now();
         ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
         for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
             BookingRequest booking = bookings.getEntry(i);
             if (booking.getAssignedRoomNumber().equalsIgnoreCase(roomNumber)
                     && isActiveRoomBookingStatus(booking.getStatus())
-                    && isDateWithinStay(DateUtils.getTodayDate(), booking.getCheckInDate(),
-                            booking.getCheckOutDate())) {
+                    && isDateWithinStay(today, booking.getCheckInDate(), booking.getCheckOutDate())) {
                 return true;
             }
         }
@@ -147,13 +207,23 @@ public class FrontDeskServiceController {
                 || status.equalsIgnoreCase("Checked In");
     }
 
-    private boolean isCurrentStayStatus(String status) {
-        return status.equalsIgnoreCase("Checked In");
+    /**
+     * A guest "has a room" if they are already Checked In, OR if a room
+     * has been Assigned to them and they simply haven't arrived yet.
+     * Widened from Checked-In-only so Room Type lookups and the guest
+     * detail view don't show N/A for guests who already have a room
+     * reserved (e.g. status = Assigned).
+     */
+    private boolean isActiveStayStatus(String status) {
+        return status.equalsIgnoreCase("Checked In")
+                || status.equalsIgnoreCase("Assigned");
     }
 
-    private boolean isDateWithinStay(String date, String checkInDate, String checkOutDate) {
+    private boolean isDateWithinStay(LocalDate date, String checkInDate, String checkOutDate) {
         try {
-            return DateUtils.isDateWithinStay(date, checkInDate, checkOutDate);
+            LocalDate checkIn = LocalDate.parse(checkInDate);
+            LocalDate checkOut = LocalDate.parse(checkOutDate);
+            return !date.isBefore(checkIn) && date.isBefore(checkOut);
         } catch (Exception e) {
             return false;
         }
@@ -196,8 +266,32 @@ public class FrontDeskServiceController {
         for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
             BookingRequest booking = bookings.getEntry(i);
             if (booking.getConfirmationNo().equalsIgnoreCase(confirmationNo)
-                    && isCurrentStayStatus(booking.getStatus())) {
+                    && isActiveStayStatus(booking.getStatus())) {
                 return booking.getAssignedRoomNumber();
+            }
+        }
+        return "N/A";
+    }
+
+    /**
+     * Display-friendly room label for guest overview / detail screens:
+     * plain room number when the guest is Checked In, "<room> (Reserved)"
+     * when a room is Assigned but the guest hasn't arrived yet, or "N/A"
+     * if neither. Use getGuestCurrentRoom() instead when you need the
+     * bare room number (e.g. to look up room type).
+     */
+    public String getGuestRoomStatusLabel(String confirmationNo) {
+        ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (!booking.getConfirmationNo().equalsIgnoreCase(confirmationNo)) {
+                continue;
+            }
+            if (booking.getStatus().equalsIgnoreCase("Checked In")) {
+                return booking.getAssignedRoomNumber();
+            }
+            if (booking.getStatus().equalsIgnoreCase("Assigned")) {
+                return booking.getAssignedRoomNumber() + " (Reserved)";
             }
         }
         return "N/A";
@@ -263,6 +357,98 @@ public class FrontDeskServiceController {
 
         quickSortBillsByAmountDescending(filtered, 1, filtered.getNumberOfEntries());
         return filtered;
+    }
+
+    /**
+     * Returns every billing record for a given guest (all stays, not just
+     * the current one), sorted with the most recent (by createdAt) first.
+     * Used by the guest detail view so front desk can see full billing
+     * history — including any unpaid bills from past stays — in one look.
+     */
+    public ListInterface<BillingRecord> getBillingHistoryByConfirmationNo(String confirmationNo) {
+        ListInterface<BillingRecord> allBills = loadBillingFromFile();
+        ListInterface<BillingRecord> filtered = new ArrayList<>();
+
+        for (int i = 1; i <= allBills.getNumberOfEntries(); i++) {
+            BillingRecord bill = allBills.getEntry(i);
+            if (bill.getConfirmationNo().equalsIgnoreCase(confirmationNo)) {
+                filtered.add(bill);
+            }
+        }
+
+        insertionSortBillsByCreatedAtDescending(filtered);
+        return filtered;
+    }
+
+    /** Sum of all bills for this guest that are not marked "Paid". */
+    public double getOutstandingBalance(String confirmationNo) {
+        ListInterface<BillingRecord> bills = getBillingHistoryByConfirmationNo(confirmationNo);
+        double total = 0.0;
+        for (int i = 1; i <= bills.getNumberOfEntries(); i++) {
+            BillingRecord bill = bills.getEntry(i);
+            if (!bill.getPaymentStatus().equalsIgnoreCase("Paid")) {
+                total += bill.getAmount();
+            }
+        }
+        return total;
+    }
+
+    // Hand-written insertion sort, most recent createdAt first.
+    private void insertionSortBillsByCreatedAtDescending(ListInterface<BillingRecord> list) {
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
+            BillingRecord key = list.getEntry(i);
+            int j = i - 1;
+            while (j >= 1 && list.getEntry(j).getCreatedAt().compareTo(key.getCreatedAt()) < 0) {
+                list.replace(j + 1, list.getEntry(j));
+                j--;
+            }
+            list.replace(j + 1, key);
+        }
+    }
+
+    /**
+     * Returns the most relevant booking status for a guest, so the UI can
+     * show it alongside room info (e.g. explain why Room No is N/A —
+     * Pending means no room decided yet, vs simply no booking at all).
+     * If a guest has multiple bookings (e.g. a past stay plus a new one),
+     * active statuses are preferred over closed ones, and the most
+     * recently created booking wins ties. Returns "No Booking" if this
+     * guest has never made a booking.
+     */
+    public String getGuestBookingStatus(String confirmationNo) {
+        ListInterface<BookingRequest> bookings = bookingDAO.loadBookings();
+        BookingRequest best = null;
+
+        for (int i = 1; i <= bookings.getNumberOfEntries(); i++) {
+            BookingRequest booking = bookings.getEntry(i);
+            if (!booking.getConfirmationNo().equalsIgnoreCase(confirmationNo)) {
+                continue;
+            }
+            if (best == null || isHigherPriorityBooking(booking, best)) {
+                best = booking;
+            }
+        }
+
+        return best != null ? best.getStatus() : "No Booking";
+    }
+
+    // Checked In > Assigned > Pending > Checked Out > Cancelled.
+    private boolean isHigherPriorityBooking(BookingRequest candidate, BookingRequest current) {
+        int candidateRank = bookingStatusRank(candidate.getStatus());
+        int currentRank = bookingStatusRank(current.getStatus());
+        if (candidateRank != currentRank) {
+            return candidateRank > currentRank;
+        }
+        return candidate.getCreatedAt().compareTo(current.getCreatedAt()) > 0;
+    }
+
+    private int bookingStatusRank(String status) {
+        if (status.equalsIgnoreCase("Checked In")) return 5;
+        if (status.equalsIgnoreCase("Assigned")) return 4;
+        if (status.equalsIgnoreCase("Pending")) return 3;
+        if (status.equalsIgnoreCase("Checked Out")) return 2;
+        if (status.equalsIgnoreCase("Cancelled")) return 1;
+        return 0;
     }
 
     public String getGuestName(String confirmationNo) {
