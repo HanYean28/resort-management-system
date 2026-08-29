@@ -23,7 +23,7 @@ import utility.DateUtils;
  * No Java Collections Framework collection interfaces/classes are used here.
  * Custom ListInterface/ArrayList and PriorityQueueInterface are used instead.
  *
- * @author Lim How Voon
+ * @author Kaizen Soh
  */
 public class VIPRoomAllocationController {
 
