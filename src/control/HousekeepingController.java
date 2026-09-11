@@ -20,14 +20,14 @@ public class HousekeepingController {
     public static final String STATUS_READY = "Ready";
 
     public static final String FILTER_ALL = "ALL";
-
+    // order of the cleaning status
     private static final String[] STATUS_PHASES = {
             STATUS_DIRTY,
             STATUS_CLEANING,
             STATUS_INSPECTED,
             STATUS_READY
     };
-
+// 1. 
     private ListInterface<Room> rooms;
     private ListInterface<HousekeepingLog> taskHistory;
     private ListInterface<RoomRollbackEntry> roomRollbackStacks;
@@ -59,7 +59,7 @@ public class HousekeepingController {
     public ListInterface<Room> getAllRooms() {
         return rooms;
     }
-
+//7. Search
     public Room getRoom(String roomNumber) {
         for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
             Room room = rooms.getEntry(i);
@@ -69,12 +69,14 @@ public class HousekeepingController {
         }
         return null;
     }
-
+     
+    // F1: Add Housekeeping Task
     public String addHousekeepingTask(String roomNumber) {
         Room room = getRoom(roomNumber);
         if (room == null) {
             return "Room not found.";
         }
+        // check again whether the list contains the room
         if (!rooms.contains(room)) {
             return "Room not found.";
         }
@@ -88,43 +90,47 @@ public class HousekeepingController {
         }
         return updateRoomStatus(roomNumber, STATUS_DIRTY);
     }
-
+    // F2: View Current Task
     public ListInterface<Room> getActiveTasks() {
-        ListInterface<Room> activeTasks = new ArrayList<>();
+        ListInterface<Room> activeTasks = new ArrayList<>(); // to store active housekeeping tasks
         for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
             Room room = rooms.getEntry(i);
-            if (isActiveTask(room)) {
+            if (isActiveTask(room)) { 
                 activeTasks.add(room);
             }
         }
         return activeTasks;
     }
-
+    // F6: View Today Late Checkout Tasks
     public ListInterface<Room> getLateCheckoutTasksForToday() {
-        ListInterface<Room> lateCheckoutTasks = new ArrayList<>();
+        ListInterface<Room> lateCheckoutTasks = new ArrayList<>(); // to store late checkout tasks for today
         for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
             Room room = rooms.getEntry(i);
-            if (isActiveTask(room)
-                    && room.getOccupancyStatus().equalsIgnoreCase("Vacant")
-                    && isUpdatedToday(room)
-                    && hasRollbackPathToReady(room.getRoomNumber())) {
+            if (isActiveTask(room) // check if the room has an active housekeeping task
+                    && room.getOccupancyStatus().equalsIgnoreCase("Vacant") // check if the room is empty
+                    && isUpdatedToday(room) // check if last update was today
+                    && hasRollbackPathToReady(room.getRoomNumber())) { // check if there is a rollback path to Ready
                 lateCheckoutTasks.add(room);
             }
         }
         return lateCheckoutTasks;
     }
-
+//3.
+    // F3: Update Room Status 
     public String updateRoomStatus(String roomNumber, String targetStatus) {
         Room room = getRoom(roomNumber);
         if (room == null) {
             return "Room not found.";
         }
 
-        String currentStatus = resolveCanonicalStatus(room.getCleanlinessStatus());
+        String currentStatus = resolveCanonicalStatus(room.getCleanlinessStatus()); // check status is valid
         String nextStatus = resolveCanonicalStatus(targetStatus);
+
         if (currentStatus == null || nextStatus == null) {
             return "Invalid room status.";
         }
+
+        // check the next status is allowed based on the status order
         if (!isStrictSequentialTransition(currentStatus, nextStatus)) {
             return "Invalid transition. Follow: Ready -> Dirty -> Cleaning In Progress -> Inspected -> Ready.";
         }
@@ -138,7 +144,7 @@ public class HousekeepingController {
         if (canonical == null) {
             return new String[0];
         }
-
+        // check the next status
         if (canonical.equals(STATUS_READY)) {
             return new String[] { STATUS_DIRTY };
         }
@@ -154,8 +160,9 @@ public class HousekeepingController {
         return new String[0];
     }
 
+    // F4: Rollback Last Action (showing the last rollback action for a room)
     public HousekeepingLog peekLastRollbackAction(String roomNumber) {
-        if (getRoom(roomNumber) == null) {
+        if (getRoom(roomNumber) == null) { 
             return null;
         }
         RoomRollbackEntry entry = findRollbackEntry(roomNumber);
@@ -172,7 +179,8 @@ public class HousekeepingController {
         }
         return entry.getStack().size();
     }
-
+//6.
+    // F4: Rollback Last Action (actually performing the rollback action for a room)
     public HousekeepingLog rollbackLastAction(String roomNumber) {
         if (getRoom(roomNumber) == null) {
             return null;
@@ -182,16 +190,20 @@ public class HousekeepingController {
         if (entry == null || entry.getStack().isEmpty()) {
             return null;
         }
-
+        // Get the last log from the stack 
         HousekeepingLog lastLog = entry.getStack().pop();
+        // get the room object based on the room number from last log
         Room room = getRoom(lastLog.getRoomNumber());
         if (room == null) {
             return null;
         }
+        
         applyStatusChange(room, lastLog.getNewStatus(), lastLog.getOldStatus(), false,
                 HousekeepingLog.ACTION_ROLLBACK);
         return lastLog;
     }
+    // F6: Handle Late Checkout
+    // Change the room status back to Ready and Occupied, and clear the rollback stack for that room
 
     public String handleLateCheckout(String roomNumber) {
         Room room = getRoom(roomNumber);
@@ -212,10 +224,13 @@ public class HousekeepingController {
         String restoredStatus = null;
         boolean restoredToReady = false;
         RoomRollbackEntry entry = findRollbackEntry(room.getRoomNumber());
-        // using stack to restore status
+
         while (entry != null && !entry.getStack().isEmpty()) {
+            // pop the last log from stack
             HousekeepingLog lastLog = entry.getStack().pop();
+            // get the old status from last log
             restoredStatus = lastLog.getOldStatus();
+            // check if the restored status is Ready
             if (restoredStatus.equals(STATUS_READY)) {
                 restoredToReady = true;
                 break;
@@ -242,6 +257,9 @@ public class HousekeepingController {
         return null;
     }
 
+// REPORTS 
+
+    // F5: View Task History
     public ListInterface<HousekeepingLog> getTaskHistory(String roomNumber) {
         ListInterface<HousekeepingLog> results = new ArrayList<>();
         for (int i = 1; i <= taskHistory.getNumberOfEntries(); i++) {
@@ -253,41 +271,50 @@ public class HousekeepingController {
         }
         return results;
     }
-
+//9.
+    // R1: Room Status Summary Report
+    // filter: cleaning status + room type
+    // sort: by cleaning status then room number (cleaning status order: Dirty -> Cleaning In Progress -> Inspected -> Ready)
     public ListInterface<Room> generateStatusSummaryReport(String statusFilter, String roomTypeFilter) {
         ListInterface<Room> results = new ArrayList<>();
         for (int i = 1; i <= rooms.getNumberOfEntries(); i++) {
             Room room = rooms.getEntry(i);
+            // filter
             boolean matchesStatus = statusFilter.equals(FILTER_ALL)
-                    || room.getCleanlinessStatus().equalsIgnoreCase(statusFilter);
+                    || room.getCleanlinessStatus().equalsIgnoreCase(statusFilter); // check the cleaning status
             boolean matchesType = roomTypeFilter.equals(FILTER_ALL)
-                    || room.getRoomType().equalsIgnoreCase(roomTypeFilter);
+                    || room.getRoomType().equalsIgnoreCase(roomTypeFilter); // check room type
 
             if (matchesStatus && matchesType) {
                 results.add(room);
             }
         }
+        // sort
         insertionSortRoomsByStatusThenNumber(results);
         return results;
     }
-
+//10.
+    // R2: Task History Report
+    // filter: room number + cleaning status + action
+    // sort: by timestamp (newest first or oldest first)
     public ListInterface<HousekeepingLog> generateTaskHistoryReport(String roomNumberFilter,
             String transitionFilter, String actionFilter, boolean newestFirst) {
         ListInterface<HousekeepingLog> results = new ArrayList<>();
+        // filter
         for (int i = 1; i <= taskHistory.getNumberOfEntries(); i++) {
             HousekeepingLog log = taskHistory.getEntry(i);
             boolean matchesRoom = roomNumberFilter.equals(FILTER_ALL)
-                    || log.getRoomNumber().equalsIgnoreCase(roomNumberFilter);
+                    || log.getRoomNumber().equalsIgnoreCase(roomNumberFilter); // check the room number
             boolean matchesTransition = transitionFilter.equals(FILTER_ALL)
-                    || log.getNewStatus().equalsIgnoreCase(transitionFilter);
+                    || log.getNewStatus().equalsIgnoreCase(transitionFilter); // check the room cleaning status
             boolean matchesAction = actionFilter.equals(FILTER_ALL)
-                    || log.getAction().equalsIgnoreCase(actionFilter);
+                    || log.getAction().equalsIgnoreCase(actionFilter); // check the action
 
             if (matchesRoom && matchesTransition && matchesAction) {
                 results.add(log);
             }
         }
-
+        // sort
         insertionSortLogsByTimestamp(results, newestFirst);
         return results;
     }
@@ -301,11 +328,13 @@ public class HousekeepingController {
         }
         return count;
     }
-
+//4.   
+    // for normal update
     private void applyStatusChange(Room room, String oldStatus, String newStatus, boolean allowRollback) {
         applyStatusChange(room, oldStatus, newStatus, allowRollback, HousekeepingLog.ACTION_UPDATE);
     }
 
+    // for rollback or late checkout (special case)
     private void applyStatusChange(Room room, String oldStatus, String newStatus, boolean allowRollback,
             String action) {
         String timestamp = getCurrentTimestamp();
@@ -319,7 +348,7 @@ public class HousekeepingController {
         if (newStatus.equals(STATUS_READY)) {
             room.setDirtySince("N/A");
         }
-
+        // save the housekeeping log for this status change
         HousekeepingLog log = new HousekeepingLog(room.getRoomNumber(), oldStatus, newStatus, timestamp, action);
         if (allowRollback) {
             pushRollbackLog(room.getRoomNumber(), log);
@@ -352,10 +381,11 @@ public class HousekeepingController {
         }
     }
 
+    // save log to taskHistory and update file
     private void appendTaskHistory(HousekeepingLog log) {
-        taskHistory.isFull();
-        taskHistory.add(log);
-        housekeepingLogDAO.appendLog(log);
+        taskHistory.isFull(); 
+        taskHistory.add(log); 
+        housekeepingLogDAO.appendLog(log); 
     }
 
     private boolean isActiveTask(Room room) {
@@ -368,6 +398,7 @@ public class HousekeepingController {
         return DateUtils.isTodayTimestamp(room.getLastUpdate());
     }
 
+    // prevent skipping status and follow the status order Ready -> Dirty -> Cleaning In Progress -> Inspected -> Ready
     private boolean isStrictSequentialTransition(String currentStatus, String targetStatus) {
         String[] allowed = getAllowedTargetStatuses(currentStatus);
         for (int i = 0; i < allowed.length; i++) {
@@ -378,14 +409,15 @@ public class HousekeepingController {
         return false;
     }
 
+    // sort the rooms by status order and then by room number (R1)
     private void insertionSortRoomsByStatusThenNumber(ListInterface<Room> list) {
-        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
-            Room key = list.remove(i);
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) { // start from 2 because 1 is sorted
+            Room key = list.remove(i); // take the log at index and remove from list
             int j = i - 1;
             while (j >= 1 && compareRoomsByStatusThenNumber(list.getEntry(j), key) > 0) {
                 j--;
             }
-            list.add(j + 1, key);
+            list.add(j + 1, key); // insert the key at the correct position
         }
     }
 
@@ -406,17 +438,18 @@ public class HousekeepingController {
         return STATUS_PHASES.length;
     }
 
+    // sort the logs by timestamp (R2)
     private void insertionSortLogsByTimestamp(ListInterface<HousekeepingLog> list, boolean newestFirst) {
-        for (int i = 2; i <= list.getNumberOfEntries(); i++) {
-            HousekeepingLog key = list.remove(i);
+        for (int i = 2; i <= list.getNumberOfEntries(); i++) { // start from 2 because 1 is sorted
+            HousekeepingLog key = list.remove(i); // take the log at index and remove from list
             int j = i - 1;
-            while (j >= 1 && compareLogTimestamp(list.getEntry(j), key, newestFirst) > 0) {
+            while (j >= 1 && compareLogTimestamp(list.getEntry(j), key, newestFirst) > 0) { // compare the timestamp 
                 j--;
             }
-            list.add(j + 1, key);
+            list.add(j + 1, key); // insert the key at the correct position
         }
     }
-
+    // compare which log timestamps is bigger
     private int compareLogTimestamp(HousekeepingLog left, HousekeepingLog right, boolean newestFirst) {
         int result = left.getTimestamp().compareTo(right.getTimestamp());
         if (newestFirst) {
@@ -425,30 +458,33 @@ public class HousekeepingController {
         return result;
     }
 
-    private String resolveCanonicalStatus(String status) {
+    // check if the status is a valid cleaning status
+    private String resolveCanonicalStatus(String status) { // Canonical status means standard status that is recognized by the system
         if (status == null) {
             return null;
         }
         for (int i = 0; i < STATUS_PHASES.length; i++) {
-            if (STATUS_PHASES[i].equalsIgnoreCase(status.trim())) {
+            if (STATUS_PHASES[i].equalsIgnoreCase(status.trim())) { // trim is remove space
                 return STATUS_PHASES[i];
             }
         }
         return null;
     }
-
+//8.Search
+    // check whether the room has rollback stack or not
     private RoomRollbackEntry findRollbackEntry(String roomNumber) {
         for (int i = 1; i <= roomRollbackStacks.getNumberOfEntries(); i++) {
-            RoomRollbackEntry entry = roomRollbackStacks.getEntry(i);
+            RoomRollbackEntry entry = roomRollbackStacks.getEntry(i); // take one rollback entry from the list
             if (entry.getRoomNumber().equalsIgnoreCase(roomNumber)) {
-                return entry;
+                return entry; // return the rollback entry of the room
             }
         }
         return null;
     }
 
+    // make sure the rollback stack exists for the room if no then create new one
     private RoomRollbackEntry getOrCreateRollbackEntry(String roomNumber) {
-        RoomRollbackEntry entry = findRollbackEntry(roomNumber);
+        RoomRollbackEntry entry = findRollbackEntry(roomNumber); // find the room rollback entry
         if (entry != null) {
             return entry;
         }
@@ -456,9 +492,9 @@ public class HousekeepingController {
         roomRollbackStacks.add(entry);
         return entry;
     }
-
+//5.
     private void pushRollbackLog(String roomNumber, HousekeepingLog log) {
-        getOrCreateRollbackEntry(roomNumber).getStack().push(log);
+        getOrCreateRollbackEntry(roomNumber).getStack().push(log); // check the rollback entry exists, and get the stack entry and push the log into the stack
     }
 
     private void clearRollbackStack(String roomNumber) {
@@ -467,9 +503,10 @@ public class HousekeepingController {
             entry.getStack().clear();
         }
     }
-
+    // Check if there is a rollback path to Ready
+    // for late checkout checking purpose
     private boolean hasRollbackPathToReady(String roomNumber) {
-        RoomRollbackEntry entry = findRollbackEntry(roomNumber);
+        RoomRollbackEntry entry = findRollbackEntry(roomNumber); 
         if (entry == null || entry.getStack().isEmpty()) {
             return false;
         }
@@ -494,7 +531,9 @@ public class HousekeepingController {
     private String getCurrentTimestamp() {
         return DateUtils.getCurrentTimestamp();
     }
-
+//2.
+    // inner class to store rollback stack for each room
+    //each room need it's own rollback stack
     private static class RoomRollbackEntry {
         private final String roomNumber;
         private final StackInterface<HousekeepingLog> stack;
@@ -507,7 +546,8 @@ public class HousekeepingController {
         private String getRoomNumber() {
             return roomNumber;
         }
-
+        // return entire stack object
+        // gives access to the whole rollback stack that belongs to that room.
         private StackInterface<HousekeepingLog> getStack() {
             return stack;
         }
